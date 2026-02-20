@@ -342,52 +342,18 @@
     }
   }
 
-  // Logo strobe + squiggling border on beat
+  // Logo pulse on beat
   const logoText = document.getElementById('logoText');
-  const rgbBorder = document.getElementById('logoBox');
-  let squiggleT = 0;
-
   function animateLogo(bass) {
-    // Scale pulse
     const s = 1 + bass * 0.09;
     logoText.style.transform = `scale(${s}, ${1+bass*0.045})`;
-
-    // Strobe: flicker opacity rapidly on strong beats
-    if(bass > 0.3) {
-      const strobe = Math.random() > (1 - bass * 0.7) ? (0.3 + Math.random()*0.4) : 1;
-      logoText.style.opacity = strobe;
+    if(bass > 0.25) {
       logoText.style.textShadow =
         `0 0 ${15+bass*50}px rgba(255,255,255,${bass*0.9}),`+
         `0 0 ${50+bass*80}px rgba(0,255,255,${bass*0.6}),`+
         `0 0 ${80+bass*100}px rgba(255,0,255,${bass*0.3})`;
     } else {
-      logoText.style.opacity = 1;
       logoText.style.textShadow = '';
-    }
-
-    // Squiggling border: offset clip-path points using sine waves on beat
-    squiggleT += 0.08 + bass * 0.25;
-    const amp = bass * 12; // squiggle amplitude grows with bass
-    const s1 = Math.sin(squiggleT)*amp, s2 = Math.sin(squiggleT*1.3+1)*amp;
-    const s3 = Math.sin(squiggleT*0.9+2)*amp, s4 = Math.sin(squiggleT*1.1+3)*amp;
-    const s5 = Math.sin(squiggleT*1.4+0.5)*amp, s6 = Math.sin(squiggleT*0.8+4)*amp;
-    const s7 = Math.sin(squiggleT*1.2+1.5)*amp, s8 = Math.sin(squiggleT*1.0+2.5)*amp;
-    rgbBorder.style.clipPath = bass > 0.08
-      ? `polygon(
-          ${s1}px ${s2}px,
-          calc(100% + ${s3}px) ${s4}px,
-          calc(100% + ${s5}px) calc(100% + ${s6}px),
-          ${s7}px calc(100% + ${s8}px)
-        )`
-      : 'none';
-
-    // Glow on beat
-    if(bass > 0.25) {
-      rgbBorder.style.boxShadow =
-        `0 0 ${20+bass*50}px rgba(255,0,255,${bass*0.5}),`+
-        `0 0 ${40+bass*70}px rgba(0,255,255,${bass*0.35})`;
-    } else {
-      rgbBorder.style.boxShadow = '';
     }
   }
 
