@@ -211,15 +211,11 @@
   function drawBlobs(bass) {
     bctx.clearRect(0,0,W,H);
     blobs.forEach(b=>{
-      // speed up on beat
-      const speedBoost = 1 + bass * 5;
-      b.x += b.vx * speedBoost; b.y += b.vy * speedBoost;
+      b.x+=b.vx; b.y+=b.vy;
       if(b.x<-b.r)b.x=W+b.r; if(b.x>W+b.r)b.x=-b.r;
       if(b.y<-b.r)b.y=H+b.r; if(b.y>H+b.r)b.y=-b.r;
-      // hue races on beat
-      b.hue=(b.hue + .08 + bass*4)%360;
-      b.phase += b.morphSpeed + bass*0.08;
-      const expand = 1 + bass * 1.1;
+      b.hue=(b.hue+.08)%360; b.phase+=b.morphSpeed;
+      const expand = 1 + bass * 0.5;
       const pts=12;
       bctx.beginPath();
       for(let i=0;i<=pts;i++){
@@ -230,8 +226,8 @@
       }
       bctx.closePath();
       const g=bctx.createRadialGradient(b.x,b.y,0,b.x,b.y,b.r*expand);
-      g.addColorStop(0,hsl(b.hue,100,60+bass*30,.9));
-      g.addColorStop(.5,hsl((b.hue+40)%360,100,50,.5+bass*.3));
+      g.addColorStop(0,hsl(b.hue,100,65,.9));
+      g.addColorStop(.5,hsl((b.hue+40)%360,100,50,.5));
       g.addColorStop(1,hsl((b.hue+80)%360,100,40,0));
       bctx.fillStyle=g;
       bctx.filter='blur(24px)';
@@ -244,44 +240,25 @@
   //  TUNNEL
   // ─────────────────────────────────────────
   let tt=0;
-  let shockwave = 0; // expands outward on beat
-  let lastBass = 0;
   const RINGS=44, SPOKES=14;
   function drawTunnel(bass){
     tctx.clearRect(0,0,W,H);
     const maxR=Math.sqrt(cx*cx+cy*cy)*1.2;
-
-    // trigger shockwave on sudden bass hit
-    if(bass - lastBass > 0.12) shockwave = 1;
-    shockwave *= 0.88; // decay
-    lastBass = bass;
-
     for(let i=RINGS;i>=0;i--){
-      const p=i/RINGS;
-      // shockwave pushes rings outward
-      const shock = shockwave * maxR * 0.18 * Math.sin(p * Math.PI);
-      const r = maxR*p + shock;
-      const depth=1-p;
-      const hue=(tt*30+i*15)%360, sat=80+Math.sin(tt*.5+i*.3)*20;
-      const lit = 10 + depth*20 + bass*40;
-      const alpha = .15+depth*.2+bass*.35;
-      const lw = 1.5 + bass*4 + shockwave*3;
+      const p=i/RINGS, r=maxR*p, depth=1-p;
+      const hue=(tt*30+i*15)%360, sat=80+Math.sin(tt*.5+i*.3)*20, lit=10+depth*20;
       tctx.beginPath(); tctx.arc(cx,cy,r,0,Math.PI*2);
-      tctx.strokeStyle=hsl(hue,sat,lit,alpha);
-      tctx.lineWidth=lw; tctx.stroke();
+      tctx.strokeStyle=hsl(hue,sat,lit,.15+depth*.2+bass*.2); tctx.lineWidth=1.5+bass*3; tctx.stroke();
     }
-    // spokes spin faster on beat
-    const spinBoost = tt*.2 + bass*1.2;
     for(let s=0;s<SPOKES;s++){
-      const angle=(s/SPOKES)*Math.PI*2 + spinBoost, hue=(tt*20+s*30)%360;
+      const angle=(s/SPOKES)*Math.PI*2+tt*.2+bass*.5, hue=(tt*20+s*30)%360;
       tctx.beginPath(); tctx.moveTo(cx,cy);
       tctx.lineTo(cx+Math.cos(angle)*maxR, cy+Math.sin(angle)*maxR);
       const g=tctx.createLinearGradient(cx,cy,cx+Math.cos(angle)*maxR,cy+Math.sin(angle)*maxR);
-      g.addColorStop(0,hsl(hue,100,60,.5+bass*.6));
-      g.addColorStop(1,hsl((hue+180)%360,100,60,0));
-      tctx.strokeStyle=g; tctx.lineWidth=1+bass*3; tctx.stroke();
+      g.addColorStop(0,hsl(hue,100,60,.5+bass*.4)); g.addColorStop(1,hsl((hue+180)%360,100,60,0));
+      tctx.strokeStyle=g; tctx.lineWidth=1+bass*2; tctx.stroke();
     }
-    tt+=.012 + bass*.04;
+    tt+=.012;
   }
 
   // ─────────────────────────────────────────
@@ -307,31 +284,31 @@
   function drawParticles(bass){
     pctx.clearRect(0,0,W,H);
 
-    // Electric cursor rings — grow and wobble hard on beat
+    // Electric cursor rings
     if(mouse.x > 0) {
       cursorRings.forEach(ring=>{
-        ring.phase += ring.speed + bass*0.15;
+        ring.phase += ring.speed + bass*0.08;
         const pts = 20;
         pctx.beginPath();
         for(let i=0;i<=pts;i++){
           const a = (i/pts)*Math.PI*2 + ring.phase;
-          const jitter = ring.r*(1+bass*1.8) + (Math.random()-.5)*10*(1+bass*4);
+          const jitter = ring.r + (Math.random()-.5)*8*(1+bass*3);
           const x = mouse.x + Math.cos(a)*jitter;
           const y = mouse.y + Math.sin(a)*jitter;
           i===0?pctx.moveTo(x,y):pctx.lineTo(x,y);
         }
         pctx.closePath();
-        pctx.strokeStyle=hsl((cursorTime*80+ring.r*4)%360,100,72,.4+bass*.7);
-        pctx.lineWidth=1.2+bass*2; pctx.stroke();
+        pctx.strokeStyle=hsl((cursorTime*80+ring.r*4)%360,100,72,.35+bass*.5);
+        pctx.lineWidth=1.2; pctx.stroke();
       });
     }
     cursorTime += 0.016;
 
     particles.forEach(p=>{
       if(p.orbit && mouse.x > -100){
-        p.orbitAngle += p.orbitSpeed + bass*0.12;
-        const tx = mouse.x + Math.cos(p.orbitAngle)*p.orbitR*(1+bass*0.8);
-        const ty = mouse.y + Math.sin(p.orbitAngle)*p.orbitR*(1+bass*0.8);
+        p.orbitAngle += p.orbitSpeed + bass*0.08;
+        const tx = mouse.x + Math.cos(p.orbitAngle)*p.orbitR;
+        const ty = mouse.y + Math.sin(p.orbitAngle)*p.orbitR;
         p.vx += (tx-p.x)*.015; p.vy += (ty-p.y)*.015;
       } else {
         const mdx=mouse.x-p.x, mdy=mouse.y-p.y, md=Math.sqrt(mdx*mdx+mdy*mdy);
@@ -339,19 +316,14 @@
           const f=(MDIST-md)/MDIST*.018; p.vx+=mdx*f; p.vy+=mdy*f;
         }
       }
-      // bass kicks particles outward from center
-      const cdx = p.x-cx, cdy = p.y-cy;
-      const cdist = Math.sqrt(cdx*cdx+cdy*cdy);
-      if(cdist > 0) { p.vx += (cdx/cdist)*bass*1.5; p.vy += (cdy/cdist)*bass*1.5; }
-
       p.x+=p.vx; p.y+=p.vy;
       const spd=Math.sqrt(p.vx*p.vx+p.vy*p.vy);
-      if(spd>5+bass*4){p.vx=p.vx/spd*(5+bass*4); p.vy=p.vy/spd*(5+bass*4);}
+      if(spd>4){p.vx=p.vx/spd*4; p.vy=p.vy/spd*4;}
       if(p.x<0)p.x=W; if(p.x>W)p.x=0; if(p.y<0)p.y=H; if(p.y>H)p.y=0;
-      p.hue=(p.hue + .2 + bass*3)%360;
-      const pr = p.r * (1+bass*3);
+      p.hue=(p.hue+.2)%360;
+      const pr = p.r * (1+bass*2);
       pctx.beginPath(); pctx.arc(p.x,p.y,pr,0,Math.PI*2);
-      pctx.fillStyle=hsl(p.hue,100,75+bass*20,.85); pctx.fill();
+      pctx.fillStyle=hsl(p.hue,100,75,.85); pctx.fill();
     });
 
     for(let i=0;i<particles.length;i++){
@@ -359,34 +331,62 @@
         const a=particles[i],b=particles[j];
         const dx=a.x-b.x, dy=a.y-b.y, dist=Math.sqrt(dx*dx+dy*dy);
         const mda=Math.sqrt((mouse.x-a.x)**2+(mouse.y-a.y)**2);
-        const thresh=(mda<MDIST?CDIST*1.9:CDIST)*(1+bass*0.8);
+        const thresh=mda<MDIST?CDIST*1.9:CDIST;
         if(dist<thresh){
-          const alpha=(1-dist/thresh)*(.65+bass*.5);
+          const alpha=(1-dist/thresh)*.65;
           pctx.beginPath(); pctx.moveTo(a.x,a.y); pctx.lineTo(b.x,b.y);
-          pctx.strokeStyle=hsl((a.hue+b.hue)/2,100,70+bass*20,Math.min(alpha,1));
-          pctx.lineWidth=.8+bass*1.5; pctx.stroke();
+          pctx.strokeStyle=hsl((a.hue+b.hue)/2,100,70,alpha);
+          pctx.lineWidth=.8; pctx.stroke();
         }
       }
     }
   }
 
-  // Logo + border pulse on beat
+  // Logo strobe + squiggling border on beat
   const logoText = document.getElementById('logoText');
   const rgbBorder = document.getElementById('logoBox');
+  let squiggleT = 0;
+
   function animateLogo(bass) {
-    const s = 1 + bass * 0.12;
-    logoText.style.transform = `scale(${s}, ${1+bass*0.06})`;
-    if(bass > 0.2) {
+    // Scale pulse
+    const s = 1 + bass * 0.09;
+    logoText.style.transform = `scale(${s}, ${1+bass*0.045})`;
+
+    // Strobe: flicker opacity rapidly on strong beats
+    if(bass > 0.3) {
+      const strobe = Math.random() > (1 - bass * 0.7) ? (0.3 + Math.random()*0.4) : 1;
+      logoText.style.opacity = strobe;
       logoText.style.textShadow =
-        `0 0 ${15+bass*60}px rgba(255,255,255,${bass*0.95}),`+
-        `0 0 ${50+bass*90}px rgba(0,255,255,${bass*0.7}),`+
-        `0 0 ${80+bass*110}px rgba(255,0,255,${bass*0.4})`;
-      rgbBorder.style.boxShadow =
-        `0 0 ${20+bass*60}px rgba(255,0,255,${bass*0.6}),`+
-        `0 0 ${40+bass*80}px rgba(0,255,255,${bass*0.4}),`+
-        `inset 0 0 ${20+bass*40}px rgba(255,255,255,${bass*0.08})`;
+        `0 0 ${15+bass*50}px rgba(255,255,255,${bass*0.9}),`+
+        `0 0 ${50+bass*80}px rgba(0,255,255,${bass*0.6}),`+
+        `0 0 ${80+bass*100}px rgba(255,0,255,${bass*0.3})`;
     } else {
+      logoText.style.opacity = 1;
       logoText.style.textShadow = '';
+    }
+
+    // Squiggling border: offset clip-path points using sine waves on beat
+    squiggleT += 0.08 + bass * 0.25;
+    const amp = bass * 12; // squiggle amplitude grows with bass
+    const s1 = Math.sin(squiggleT)*amp, s2 = Math.sin(squiggleT*1.3+1)*amp;
+    const s3 = Math.sin(squiggleT*0.9+2)*amp, s4 = Math.sin(squiggleT*1.1+3)*amp;
+    const s5 = Math.sin(squiggleT*1.4+0.5)*amp, s6 = Math.sin(squiggleT*0.8+4)*amp;
+    const s7 = Math.sin(squiggleT*1.2+1.5)*amp, s8 = Math.sin(squiggleT*1.0+2.5)*amp;
+    rgbBorder.style.clipPath = bass > 0.08
+      ? `polygon(
+          ${s1}px ${s2}px,
+          calc(100% + ${s3}px) ${s4}px,
+          calc(100% + ${s5}px) calc(100% + ${s6}px),
+          ${s7}px calc(100% + ${s8}px)
+        )`
+      : 'none';
+
+    // Glow on beat
+    if(bass > 0.25) {
+      rgbBorder.style.boxShadow =
+        `0 0 ${20+bass*50}px rgba(255,0,255,${bass*0.5}),`+
+        `0 0 ${40+bass*70}px rgba(0,255,255,${bass*0.35})`;
+    } else {
       rgbBorder.style.boxShadow = '';
     }
   }
