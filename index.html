@@ -1,14 +1,182 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Coming Soon</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>acidmartin.com</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
-    body { background: black; display: flex; justify-content: center; 
-           align-items: center; height: 100vh; margin: 0; }
-    p { color: white; font-size: 2rem; font-family: sans-serif; }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --c1: #ff00ff; --c2: #00ffff; --c3: #ff6600; --c4: #00ff66; --c5: #6600ff;
+    }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Space Mono', monospace; }
+    #blobCanvas  { position: fixed; inset: 0; z-index: 1; opacity: 0.35; mix-blend-mode: screen; }
+    #tunnelCanvas{ position: fixed; inset: 0; z-index: 2; }
+    #particleCanvas{ position: fixed; inset: 0; z-index: 3; }
+    body::after {
+      content: ''; position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+      background-size: 200px 200px; pointer-events: none; z-index: 5; opacity: 0.4; mix-blend-mode: overlay;
+    }
+    .stage { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; pointer-events: none; }
+    .glitch { font-size: clamp(3rem, 10vw, 8rem); font-weight: 700; color: #fff; letter-spacing: 0.05em; text-transform: lowercase; position: relative; animation: flicker 8s infinite; }
+    .glitch::before, .glitch::after { content: attr(data-text); position: absolute; inset: 0; }
+    .glitch::before { color: var(--c1); clip-path: polygon(0 20%, 100% 20%, 100% 40%, 0 40%); animation: glitch-top 3s infinite steps(2); mix-blend-mode: screen; }
+    .glitch::after  { color: var(--c2); clip-path: polygon(0 60%, 100% 60%, 100% 80%, 0 80%); animation: glitch-bot 2.5s infinite steps(2); mix-blend-mode: screen; }
+    .sub { margin-top: 1.5rem; font-size: clamp(0.7rem, 2vw, 1rem); letter-spacing: 0.4em; text-transform: uppercase; color: rgba(255,255,255,0.5); animation: pulse-sub 4s ease-in-out infinite; }
+    .sub::before { content: '▶ '; color: var(--c3); animation: blink 1s step-end infinite; }
+    .scanline { position: fixed; inset: 0; background: repeating-linear-gradient(to bottom, transparent 0px, transparent 3px, rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 4px); pointer-events: none; z-index: 6; }
+    .vignette  { position: fixed; inset: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.85) 100%); pointer-events: none; z-index: 7; }
+    .rgb-border { position: relative; padding: 2rem 4rem; border: 1px solid rgba(255,255,255,0.08); animation: border-pulse 4s ease-in-out infinite; }
+    .rgb-border::before { content: ''; position: absolute; inset: -2px; background: linear-gradient(90deg, var(--c1), var(--c2), var(--c3), var(--c4), var(--c5), var(--c1)); background-size: 300% 100%; border-radius: 2px; z-index: -1; animation: rainbow-border 3s linear infinite; opacity: 0.6; }
+    .rgb-border::after  { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,0.92); z-index: -1; }
+    @keyframes glitch-top { 0%{transform:translate(-3px,0)} 25%{transform:translate(3px,0)} 50%{transform:translate(-1px,0) skewX(5deg)} 75%{transform:translate(2px,0)} 100%{transform:translate(-3px,0)} }
+    @keyframes glitch-bot { 0%{transform:translate(3px,0)} 33%{transform:translate(-3px,0) skewX(-3deg)} 66%{transform:translate(1px,0)} 100%{transform:translate(3px,0)} }
+    @keyframes flicker { 0%,95%,100%{opacity:1} 96%{opacity:.4} 97%{opacity:1} 98%{opacity:.2} 99%{opacity:1} }
+    @keyframes pulse-sub { 0%,100%{opacity:.5} 50%{opacity:1;color:rgba(255,255,255,.9);letter-spacing:.5em} }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    @keyframes rainbow-border { 0%{background-position:0% 50%} 100%{background-position:300% 50%} }
+    @keyframes border-pulse { 0%,100%{box-shadow:0 0 0 transparent} 50%{box-shadow:0 0 30px rgba(255,0,255,.15),0 0 60px rgba(0,255,255,.1)} }
   </style>
 </head>
 <body>
-  <p>Coming Soon...</p>
+<canvas id="blobCanvas"></canvas>
+<canvas id="tunnelCanvas"></canvas>
+<canvas id="particleCanvas"></canvas>
+<div class="scanline"></div>
+<div class="vignette"></div>
+<div class="stage">
+  <div class="rgb-border">
+    <div class="glitch" data-text="acidmartin">acidmartin</div>
+    <div class="sub">something is coming</div>
+  </div>
+</div>
+<script>
+  let W, H, cx, cy;
+  const mouse = { x: -9999, y: -9999 };
+  const blobCanvas     = document.getElementById('blobCanvas');
+  const tunnelCanvas   = document.getElementById('tunnelCanvas');
+  const particleCanvas = document.getElementById('particleCanvas');
+  const bctx = blobCanvas.getContext('2d');
+  const tctx = tunnelCanvas.getContext('2d');
+  const pctx = particleCanvas.getContext('2d');
+
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight; cx = W/2; cy = H/2;
+    [blobCanvas, tunnelCanvas, particleCanvas].forEach(c => { c.width=W; c.height=H; });
+  }
+  window.addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
+  window.addEventListener('touchmove', e => { mouse.x=e.touches[0].clientX; mouse.y=e.touches[0].clientY; }, {passive:true});
+  window.addEventListener('resize', resize);
+
+  function hsl(h,s,l,a=1){ return `hsla(${h},${s}%,${l}%,${a})`; }
+
+  // ── BLOBS ──
+  const blobs = Array.from({length:6},(_,i)=>({
+    x: Math.random()*window.innerWidth,
+    y: Math.random()*window.innerHeight,
+    vx:(Math.random()-.5)*.4, vy:(Math.random()-.5)*.4,
+    r: 130+Math.random()*170,
+    hue:(i/6)*360, phase:Math.random()*Math.PI*2,
+    morphSpeed:.003+Math.random()*.004,
+  }));
+
+  function drawBlobs() {
+    bctx.clearRect(0,0,W,H);
+    blobs.forEach(b=>{
+      b.x+=b.vx; b.y+=b.vy;
+      if(b.x<-b.r) b.x=W+b.r; if(b.x>W+b.r) b.x=-b.r;
+      if(b.y<-b.r) b.y=H+b.r; if(b.y>H+b.r) b.y=-b.r;
+      b.hue=(b.hue+.08)%360; b.phase+=b.morphSpeed;
+      const pts=10;
+      bctx.beginPath();
+      for(let i=0;i<=pts;i++){
+        const angle=(i/pts)*Math.PI*2;
+        const morph=b.r*(.72+.28*Math.sin(b.phase+i*1.1+Math.cos(b.phase*.7+i)));
+        const x=b.x+Math.cos(angle)*morph, y=b.y+Math.sin(angle)*morph;
+        i===0?bctx.moveTo(x,y):bctx.lineTo(x,y);
+      }
+      bctx.closePath();
+      const g=bctx.createRadialGradient(b.x,b.y,0,b.x,b.y,b.r);
+      g.addColorStop(0,hsl(b.hue,100,65,.9));
+      g.addColorStop(.5,hsl((b.hue+40)%360,100,50,.5));
+      g.addColorStop(1,hsl((b.hue+80)%360,100,40,0));
+      bctx.fillStyle=g;
+      bctx.filter='blur(38px)';
+      bctx.fill();
+      bctx.filter='none';
+    });
+  }
+
+  // ── TUNNEL ──
+  let tt=0;
+  const RINGS=40, SPOKES=12;
+  function drawTunnel(){
+    tctx.clearRect(0,0,W,H);
+    const maxR=Math.sqrt(cx*cx+cy*cy)*1.2;
+    for(let i=RINGS;i>=0;i--){
+      const p=i/RINGS, r=maxR*p, depth=1-p;
+      const hue=(tt*30+i*15)%360, sat=80+Math.sin(tt*.5+i*.3)*20, lit=10+depth*20;
+      tctx.beginPath(); tctx.arc(cx,cy,r,0,Math.PI*2);
+      tctx.strokeStyle=hsl(hue,sat,lit,.15+depth*.2); tctx.lineWidth=1.5; tctx.stroke();
+    }
+    for(let s=0;s<SPOKES;s++){
+      const angle=(s/SPOKES)*Math.PI*2+tt*.2, hue=(tt*20+s*30)%360;
+      tctx.beginPath(); tctx.moveTo(cx,cy);
+      tctx.lineTo(cx+Math.cos(angle)*maxR, cy+Math.sin(angle)*maxR);
+      const g=tctx.createLinearGradient(cx,cy,cx+Math.cos(angle)*maxR,cy+Math.sin(angle)*maxR);
+      g.addColorStop(0,hsl(hue,100,60,.5)); g.addColorStop(1,hsl((hue+180)%360,100,60,0));
+      tctx.strokeStyle=g; tctx.lineWidth=1; tctx.stroke();
+    }
+    tt+=.012;
+  }
+
+  // ── PARTICLES ──
+  const N=130, CDIST=140, MDIST=190;
+  const particles=Array.from({length:N},()=>({
+    x:Math.random()*window.innerWidth, y:Math.random()*window.innerHeight,
+    vx:(Math.random()-.5)*.5, vy:(Math.random()-.5)*.5,
+    r:1.5+Math.random()*2, hue:Math.random()*360,
+  }));
+
+  function drawParticles(){
+    pctx.clearRect(0,0,W,H);
+    particles.forEach(p=>{
+      p.x+=p.vx; p.y+=p.vy;
+      if(p.x<0)p.x=W; if(p.x>W)p.x=0; if(p.y<0)p.y=H; if(p.y>H)p.y=0;
+      p.hue=(p.hue+.2)%360;
+      const mdx=mouse.x-p.x, mdy=mouse.y-p.y, md=Math.sqrt(mdx*mdx+mdy*mdy);
+      if(md<MDIST){
+        const f=(MDIST-md)/MDIST*.018; p.vx+=mdx*f; p.vy+=mdy*f;
+        const spd=Math.sqrt(p.vx*p.vx+p.vy*p.vy);
+        if(spd>3){p.vx=p.vx/spd*3; p.vy=p.vy/spd*3;}
+      }
+      pctx.beginPath(); pctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      pctx.fillStyle=hsl(p.hue,100,75,.85); pctx.fill();
+    });
+    for(let i=0;i<particles.length;i++){
+      for(let j=i+1;j<particles.length;j++){
+        const a=particles[i],b=particles[j];
+        const dx=a.x-b.x, dy=a.y-b.y, dist=Math.sqrt(dx*dx+dy*dy);
+        const mda=Math.sqrt((mouse.x-a.x)**2+(mouse.y-a.y)**2);
+        const thresh=mda<MDIST?CDIST*1.9:CDIST;
+        if(dist<thresh){
+          const alpha=(1-dist/thresh)*.65;
+          pctx.beginPath(); pctx.moveTo(a.x,a.y); pctx.lineTo(b.x,b.y);
+          pctx.strokeStyle=hsl((a.hue+b.hue)/2,100,70,alpha);
+          pctx.lineWidth=.8; pctx.stroke();
+        }
+      }
+    }
+  }
+
+  resize();
+  function loop(){
+    drawBlobs(); drawTunnel(); drawParticles();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+</script>
 </body>
 </html>
