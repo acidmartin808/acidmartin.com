@@ -215,24 +215,107 @@ function drawPlasma(bass){
 
 // ── TUNNEL ─────────────────────────────────────────────────────
 let tt=0;
+// Pre-built spoke state — each spoke has its own bolt path that regenerates on beat
+const SPOKE_N=12;
+const spokes=Array.from({length:SPOKE_N},(_,i)=>({
+  angle:(i/SPOKE_N)*Math.PI*2,
+  hue:(i/SPOKE_N)*360,
+  pts:[], // electrified path points
+  life:0, // current bolt brightness (0=dark, 1=bright)
+  decay:.018+Math.random()*.02,
+  lastAngle:0,
+}));
+let spokeCooldown=0;
+
+function makeBoltPts(cx,cy,angle,maxR){
+  // generate a jagged lightning path from center outward
+  const pts=[{x:cx,y:cy}];
+  const steps=8+Math.floor(Math.random()*6);
+  for(let i=1;i<=steps;i++){
+    const t=i/steps;
+    const r=maxR*t;
+    const jitter=r*.18*(1-t*.5); // jitter shrinks near tip
+    const a=angle+(Math.random()-.5)*jitter/maxR*6;
+    pts.push({
+      x:cx+Math.cos(a)*r+(Math.random()-.5)*jitter,
+      y:cy+Math.sin(a)*r+(Math.random()-.5)*jitter,
+    });
+  }
+  return pts;
+}
+
 function drawTunnel(bass){
   tctx.clearRect(0,0,W,H);
   const maxR=Math.sqrt(cx*cx+cy*cy)*1.2;
+  const transient=bass-prevSmoothBass;
+
+  // ── concentric rings — still there, subtle ─────────────────
   for(let i=40;i>=0;i--){
     const p=i/40,r=maxR*p,depth=1-p,hue=(tt*30+i*15)%360;
     tctx.beginPath();tctx.arc(cx,cy,r,0,Math.PI*2);
-    tctx.strokeStyle=hsl(hue,80,10+depth*20,.15+depth*.2+bass*.2);
-    tctx.lineWidth=1.5+bass*3;tctx.stroke();
+    tctx.strokeStyle=hsl(hue,80,10+depth*20,.12+depth*.15+bass*.18);
+    tctx.lineWidth=1+bass*2;tctx.stroke();
   }
-  for(let s=0;s<12;s++){
-    const angle=(s/12)*Math.PI*2+tt*.2+bass*.4,hue=(tt*20+s*30)%360;
-    tctx.beginPath();tctx.moveTo(cx,cy);
-    tctx.lineTo(cx+Math.cos(angle)*maxR,cy+Math.sin(angle)*maxR);
-    const g=tctx.createLinearGradient(cx,cy,cx+Math.cos(angle)*maxR,cy+Math.sin(angle)*maxR);
-    g.addColorStop(0,hsl(hue,100,60,.5+bass*.4));
-    g.addColorStop(1,hsl((hue+180)%360,100,60,0));
-    tctx.strokeStyle=g;tctx.lineWidth=1+bass*2;tctx.stroke();
+
+  // ── electrified spokes — regenerate on bass hit ────────────
+  spokeCooldown=Math.max(0,spokeCooldown-1);
+
+  // big hit: regen ALL spokes at once for full burst
+  const bigHit=transient>0.045&&bass>0.22;
+  // smaller hit: regen random subset
+  const smallHit=transient>0.02&&bass>0.12&&spokeCooldown===0;
+
+  if(bigHit){
+    spokeCooldown=4;
+    spokes.forEach(s=>{
+      s.angle=(s.lastAngle||s.angle)+tt*.2+bass*.4; // advance by beat
+      s.pts=makeBoltPts(cx,cy,s.angle,maxR);
+      s.life=1.0;
+      s.decay=.022+Math.random()*.018;
+      s.hue=(tt*20+Math.random()*60)%360;
+    });
+  } else if(smallHit){
+    spokeCooldown=6;
+    // only regen 3-6 random spokes for syncopation
+    const count=3+Math.floor(bass*4);
+    const idxs=Array.from({length:SPOKE_N},(_,i)=>i).sort(()=>Math.random()-.5).slice(0,count);
+    idxs.forEach(i=>{
+      const s=spokes[i];
+      s.angle=(i/SPOKE_N)*Math.PI*2+tt*.2+bass*.3+(Math.random()-.5)*.4;
+      s.pts=makeBoltPts(cx,cy,s.angle,maxR*(.5+Math.random()*.5));
+      s.life=.5+bass*.5;
+      s.decay=.03+Math.random()*.025;
+      s.hue=(tt*20+i*30+Math.random()*40)%360;
+    });
   }
+
+  // draw each spoke as a lightning bolt
+  spokes.forEach(s=>{
+    s.life=Math.max(0,s.life-s.decay);
+    if(s.life<0.01||s.pts.length<2) return;
+    const a=s.life;
+
+    // outer glow
+    tctx.shadowBlur=16+bass*20;
+    tctx.shadowColor=hsl(s.hue,100,70);
+    tctx.strokeStyle=hsl(s.hue,100,75,a*.8);
+    tctx.lineWidth=1.5+bass*1.5;
+    tctx.globalAlpha=a;
+    tctx.beginPath();
+    s.pts.forEach((p,i)=>i===0?tctx.moveTo(p.x,p.y):tctx.lineTo(p.x,p.y));
+    tctx.stroke();
+
+    // white core
+    tctx.shadowBlur=4;
+    tctx.strokeStyle=`rgba(255,255,255,${a*.6})`;
+    tctx.lineWidth=.5;
+    tctx.beginPath();
+    s.pts.forEach((p,i)=>i===0?tctx.moveTo(p.x,p.y):tctx.lineTo(p.x,p.y));
+    tctx.stroke();
+
+    tctx.globalAlpha=1;tctx.shadowBlur=0;
+  });
+
   tt+=.011;
 }
 
@@ -252,7 +335,7 @@ const orbitParticles=Array.from({length:ORBIT_N},(_,i)=>({
 
 // Gravitational floaters — drift freely, get pulled toward cursor,
 // occasionally escape back out. More than bg drifters, less committed.
-const FLOAT_N=70;
+const FLOAT_N=120;
 const floaters=Array.from({length:FLOAT_N},()=>({
   x:Math.random()*innerWidth, y:Math.random()*innerHeight,
   vx:(Math.random()-.5)*.6, vy:(Math.random()-.5)*.6,
