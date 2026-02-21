@@ -261,6 +261,10 @@ function drawTunnel(bass){
   const maxR=Math.sqrt(cx*cx+cy*cy)*1.2;
   const transient=bass-prevSmoothBass;
 
+  // declare up top so both flip and morph blocks can use them
+  const bigHit=transient>0.042&&bass>0.20;
+  const smallHit=transient>0.018&&bass>0.10&&spokeCooldown===0;
+
   // ── concentric rings ───────────────────────────────────────
   for(let i=40;i>=0;i--){
     const p=i/40,r=maxR*p,depth=1-p,hue=(tt*30+i*15)%360;
@@ -272,21 +276,18 @@ function drawTunnel(bass){
   // ── violent direction flips ────────────────────────────────
   dirFlipCooldown=Math.max(0,dirFlipCooldown-1);
   autoFlipTimer++;
-  // decay momentum back to 1 each frame
   rotMomentum+=(1.0-rotMomentum)*0.035;
 
   const shouldFlip=(bigHit&&dirFlipCooldown===0)||autoFlipTimer>55;
   if(shouldFlip){
     globalRotDir*=-1;
-    rotMomentum=4.5;   // violent speed spike on reversal
+    rotMomentum=4.5;
     dirFlipCooldown=30;
     autoFlipTimer=0;
   }
 
   // ── trigger lightning morph on beat ───────────────────────
   spokeCooldown=Math.max(0,spokeCooldown-1);
-  const bigHit=transient>0.042&&bass>0.20;
-  const smallHit=transient>0.018&&bass>0.10&&spokeCooldown===0;
 
   if(bigHit){
     spokeCooldown=5;
