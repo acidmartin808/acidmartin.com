@@ -464,28 +464,105 @@ function drawLightning(bass){
 }
 
 // ── AUDIO SPECTRUM WAVEFORM ───────────────────────────────────
-const WAVE_PTS = 80;
-const waveData = [
-  { smooth: new Float32Array(WAVE_PTS), binStart:0,    binEnd:0.10, amp:1.0,  speed:0.55 }, // sub/kick — most reactive
-  { smooth: new Float32Array(WAVE_PTS), binStart:0.06, binEnd:0.20, amp:0.5,  speed:0.62 },
-  { smooth: new Float32Array(WAVE_PTS), binStart:0.14, binEnd:0.32, amp:0.32, speed:0.68 },
+// Smooth layered blobs like the reference screenshots
+// Uses cubic bezier smoothing for organic rounded peaks
+// TOP: left-anchored, grows UP. BOTTOM: right-anchored, grows DOWN (reversed)
+
+const WAVE_PTS = 64; // lower res = smoother blobs
+// 4 frequency bands per side, stacked like the reference
+const bands = [
+  // binStart, binEnd, smoothing factor (lower = snappier)
+  { s: new Float32Array(WAVE_PTS), b0f:0.00, b1f:0.08, spd:0.50 }, // sub/kick  — snappiest
+  { s: new Float32Array(WAVE_PTS), b0f:0.05, b1f:0.15, spd:0.58 }, // bass
+  { s: new Float32Array(WAVE_PTS), b0f:0.11, b1f:0.26, spd:0.64 }, // low-mid
+  { s: new Float32Array(WAVE_PTS), b0f:0.20, b1f:0.40, spd:0.70 }, // mid
 ];
-let specHue  = 0;
-let shakeX   = 0, shakeY = 0; // bass shake offset for logo box
+
+// Colors match reference: pink→cyan→green layered
+const BAND_COLORS_TOP = [
+  { fill:[300,100,60], stroke:[180,100,75] }, // magenta fill, cyan stroke
+  { fill:[200,100,55], stroke:[140,100,72] }, // cyan fill, green stroke
+  { fill:[260,100,58], stroke:[300,100,72] }, // purple fill, pink stroke
+  { fill:[160,100,52], stroke:[200,100,70] }, // green fill, cyan stroke
+];
+const BAND_COLORS_BOT = [
+  { fill:[180,100,58], stroke:[300,100,72] },
+  { fill:[300,100,55], stroke:[160,100,72] },
+  { fill:[140,100,52], stroke:[260,100,70] },
+  { fill:[220,100,55], stroke:[140,100,72] },
+];
+
+let specHue = 0;
+let shakeX = 0, shakeY = 0;
 let prevBassForShake = 0;
 
 function updateWaveData(){
   if(!audioReady) return;
   const specEnd = Math.floor(bufferLength * 0.65);
-  waveData.forEach(w=>{
-    const b0=Math.floor(w.binStart*specEnd), b1=Math.floor(w.binEnd*specEnd);
+  bands.forEach(b=>{
+    const b0=Math.floor(b.b0f*specEnd), b1=Math.floor(b.b1f*specEnd);
     const span=Math.max(1,b1-b0);
     for(let i=0;i<WAVE_PTS;i++){
       const bin=b0+Math.floor((i/WAVE_PTS)*span);
       const raw=(freqData[bin]||0)/255;
-      w.smooth[i]=w.smooth[i]*w.speed + raw*(1-w.speed);
+      // boost low-end sensitivity
+      const boosted = Math.pow(raw, 0.55);
+      b.s[i]=b.s[i]*b.spd + boosted*(1-b.spd);
     }
   });
+}
+
+// Draw a single smooth filled blob using bezier curves
+function drawBlob(arr, xLeft, xRight, edgeY, dir, maxH, fillColor, strokeColor, alpha){
+  const n = arr.length;
+  if(n < 2) return;
+
+  // build point array
+  const pts = [];
+  for(let i=0;i<n;i++){
+    pts.push({
+      x: xLeft + (i/(n-1))*(xRight-xLeft),
+      y: edgeY + dir * arr[i] * maxH
+    });
+  }
+
+  // filled shape with smooth beziers
+  const [fh,fs,fl] = fillColor;
+  const grad = sctx.createLinearGradient(0, edgeY, 0, edgeY + dir*maxH);
+  grad.addColorStop(0,   `hsla(${fh},${fs}%,${fl}%,${alpha*0.05})`);
+  grad.addColorStop(0.45,`hsla(${fh},${fs}%,${fl}%,${alpha*0.55})`);
+  grad.addColorStop(1,   `hsla(${(fh+50)%360},${fs}%,${Math.min(fl+20,92)}%,${alpha*0.85})`);
+
+  sctx.beginPath();
+  sctx.moveTo(xLeft, edgeY);
+  sctx.lineTo(pts[0].x, pts[0].y);
+  // smooth catmull-rom style beziers through all points
+  for(let i=0;i<pts.length-1;i++){
+    const cp1x = pts[i].x   + (pts[i+1].x - (pts[i-1]||pts[i]).x)/6;
+    const cp1y = pts[i].y   + (pts[i+1].y - (pts[i-1]||pts[i]).y)/6;
+    const cp2x = pts[i+1].x - (pts[i+2]||pts[i+1]).x/6 + pts[i].x/6;
+    const cp2y = pts[i+1].y - (pts[i+2]||pts[i+1]).y/6 + pts[i].y/6;
+    sctx.bezierCurveTo(cp1x,cp1y, cp2x,cp2y, pts[i+1].x, pts[i+1].y);
+  }
+  sctx.lineTo(xRight, edgeY);
+  sctx.closePath();
+  sctx.fillStyle = grad;
+  sctx.fill();
+
+  // glowing stroke along the ridge only
+  const [sh,ss,sl] = strokeColor;
+  sctx.strokeStyle = `hsla(${sh},${ss}%,${sl}%,${alpha*0.9})`;
+  sctx.lineWidth = 2;
+  sctx.beginPath();
+  sctx.moveTo(pts[0].x, pts[0].y);
+  for(let i=0;i<pts.length-1;i++){
+    const cp1x = pts[i].x   + (pts[i+1].x - (pts[i-1]||pts[i]).x)/6;
+    const cp1y = pts[i].y   + (pts[i+1].y - (pts[i-1]||pts[i]).y)/6;
+    const cp2x = pts[i+1].x - (pts[i+2]||pts[i+1]).x/6 + pts[i].x/6;
+    const cp2y = pts[i+1].y - (pts[i+2]||pts[i+1]).y/6 + pts[i].y/6;
+    sctx.bezierCurveTo(cp1x,cp1y, cp2x,cp2y, pts[i+1].x, pts[i+1].y);
+  }
+  sctx.stroke();
 }
 
 function drawSpectrumBorder(bass){
@@ -494,161 +571,175 @@ function drawSpectrumBorder(bass){
 
   updateWaveData();
 
-  const bx=boxRect.left, by=boxRect.top;
-  const bw=boxRect.width, bh=boxRect.height;
+  const bx=boxRect.left, by=boxRect.top, bw=boxRect.width, bh=boxRect.height;
+  specHue = (specHue + 0.4 + bass*1.5) % 360;
 
-  specHue=(specHue+0.5+bass*2.2)%360;
-
-  // Bass shake: transient detection → random screen nudge
-  const bassTransient = bass - prevBassForShake;
-  if(bassTransient > 0.06 && bass > 0.28){
-    shakeX = (Math.random()-.5)*10*bass;
-    shakeY = (Math.random()-.5)*8*bass;
-  }
-  shakeX *= 0.75; shakeY *= 0.75; // decay
+  // bass shake
+  const bt = bass - prevBassForShake;
+  if(bt > 0.055 && bass > 0.25){ shakeX=(Math.random()-.5)*12*bass; shakeY=(Math.random()-.5)*9*bass; }
+  shakeX*=0.72; shakeY*=0.72;
   prevBassForShake = bass;
 
-  // Apply shake to canvas transform
   sctx.save();
   sctx.translate(shakeX, shakeY);
+  sctx.shadowBlur = 18 + bass*30;
+  sctx.shadowColor = `hsl(${specHue},100%,68%)`;
 
-  // maxAmp: 2x taller than before, highly reactive
-  const maxAmp = 70 + bass * 130;
+  // height: tall reactive blobs
+  const maxH = 65 + bass * 125;
 
-  function drawWaveLayer(smoothArr, xStart, xEnd, edgeY, dir, ampScale, hue, alpha){
-    const x0 = bx + xStart*bw;
-    const x1 = bx + xEnd*bw;
+  // ── TOP: left-anchored, 4 stacked bands, grow upward ──────
+  // each band slightly narrower = nested/layered look like reference
+  const topWidths = [0.48, 0.36, 0.26, 0.17]; // fraction of bw
+  bands.forEach((b,i)=>{
+    const xR = bx + topWidths[i]*bw;
+    const c = BAND_COLORS_TOP[i];
+    const amp = 1.0 - i*0.15; // each layer slightly shorter
+    const alpha = 0.88 - i*0.1;
+    drawBlob(b.s, bx, xR, by, -1, maxH*amp, c.fill, c.stroke, alpha);
+  });
 
-    // vertical gradient — fade from edge, bright at tip
-    const grad = sctx.createLinearGradient(0, edgeY, 0, edgeY + dir*maxAmp*ampScale);
-    grad.addColorStop(0,   hsl(hue,100,55, alpha*0.04));
-    grad.addColorStop(0.5, hsl((hue+40)%360,100,60, alpha*0.35));
-    grad.addColorStop(1,   hsl((hue+80)%360,100,82, alpha*0.9));
+  // ── BOTTOM: right-anchored, reversed, grow downward ───────
+  const botWidths = [0.48, 0.36, 0.26, 0.17];
+  bands.forEach((b,i)=>{
+    const rev = b.s.slice().reverse();
+    const xL = bx + bw - botWidths[i]*bw;
+    const c = BAND_COLORS_BOT[i];
+    const amp = 1.0 - i*0.15;
+    const alpha = 0.88 - i*0.1;
+    drawBlob(rev, xL, bx+bw, by+bh, 1, maxH*amp, c.fill, c.stroke, alpha);
+  });
 
-    sctx.shadowBlur  = 16 + bass*28;
-    sctx.shadowColor = hsl(hue,100,70);
-
-    // filled shape
-    sctx.beginPath();
-    sctx.moveTo(x0, edgeY);
-    for(let i=0;i<WAVE_PTS;i++){
-      const t=i/(WAVE_PTS-1);
-      sctx.lineTo(x0+t*(x1-x0), edgeY + dir*smoothArr[i]*maxAmp*ampScale);
-    }
-    sctx.lineTo(x1, edgeY);
-    sctx.closePath();
-    sctx.fillStyle = grad;
-    sctx.fill();
-
-    // glowing ridge
-    sctx.strokeStyle = hsl((hue+70)%360,100,88, alpha*0.95);
-    sctx.lineWidth   = ampScale > 0.7 ? 2.5 : 1.2;
-    sctx.beginPath();
-    for(let i=0;i<WAVE_PTS;i++){
-      const t=i/(WAVE_PTS-1);
-      const px=x0+t*(x1-x0), py=edgeY+dir*smoothArr[i]*maxAmp*ampScale;
-      i===0?sctx.moveTo(px,py):sctx.lineTo(px,py);
-    }
-    sctx.stroke();
-    sctx.shadowBlur=0;
-  }
-
-  // ── TOP — anchor LEFT, narrow (40% / 28% / 18%), grow UP ──
-  drawWaveLayer(waveData[0].smooth, 0, 0.40, by, -1, 1.0,  specHue,          0.95);
-  drawWaveLayer(waveData[1].smooth, 0, 0.28, by, -1, 0.6,  (specHue+70)%360, 0.7);
-  drawWaveLayer(waveData[2].smooth, 0, 0.18, by, -1, 0.38, (specHue+140)%360,0.5);
-
-  // ── BOTTOM — anchor RIGHT, narrow, grow DOWN, reversed ────
-  const rev0 = waveData[0].smooth.slice().reverse();
-  const rev1 = waveData[1].smooth.slice().reverse();
-  const rev2 = waveData[2].smooth.slice().reverse();
-  const bHue = (specHue+170)%360;
-  drawWaveLayer(rev0, 0.60, 1.0, by+bh, 1, 1.0,  bHue,           0.95);
-  drawWaveLayer(rev1, 0.72, 1.0, by+bh, 1, 0.6,  (bHue+70)%360,  0.7);
-  drawWaveLayer(rev2, 0.82, 1.0, by+bh, 1, 0.38, (bHue+140)%360, 0.5);
-
-  // static side lines
-  sctx.strokeStyle='rgba(255,255,255,0.1)';
-  sctx.lineWidth=1; sctx.shadowBlur=0;
-  sctx.beginPath(); sctx.moveTo(bx,    by); sctx.lineTo(bx,    by+bh); sctx.stroke();
-  sctx.beginPath(); sctx.moveTo(bx+bw, by); sctx.lineTo(bx+bw, by+bh); sctx.stroke();
-
-  sctx.restore(); // undo shake translate
+  // subtle side lines
+  sctx.shadowBlur=0;
+  sctx.strokeStyle='rgba(255,255,255,0.1)'; sctx.lineWidth=1;
+  sctx.beginPath(); sctx.moveTo(bx,by); sctx.lineTo(bx,by+bh); sctx.stroke();
+  sctx.beginPath(); sctx.moveTo(bx+bw,by); sctx.lineTo(bx+bw,by+bh); sctx.stroke();
+  sctx.restore();
 }
 
 // ── HIHAT ENERGY ─────────────────────────────────────────────
 function getHihatEnergy(){
   if(!audioReady) return 0;
-  // hihat lives ~6kHz-14kHz
-  const binHz = (audioCtx.sampleRate/2)/bufferLength;
+  const binHz=(audioCtx.sampleRate/2)/bufferLength;
   const lo=Math.floor(6000/binHz), hi=Math.floor(14000/binHz);
   let sum=0;
   for(let i=lo;i<=hi&&i<bufferLength;i++) sum+=freqData[i];
   return sum/((hi-lo+1)*255);
 }
 
-// ── LOGO GLITCH + HIHAT STROBE ────────────────────────────────
-const logoText = document.getElementById('logoText');
-let glitchTimer = 0;
-let strobeState = false;
-let smoothHihat = 0;
+// ── LOGO GLITCH + SHAKE + STROBE ─────────────────────────────
+const logoText   = document.getElementById('logoText');
+const logoBox    = document.getElementById('logoBox');
+let glitchTimer  = 0;
+let strobeState  = false;
+let smoothHihat  = 0;
+let logoShakeX   = 0, logoShakeY = 0;
+let glitchOffset = 0; // rolling glitch intensity
 
-// CSS for beat-hit class injected once
-(()=>{
-  const s=document.createElement('style');
-  s.textContent=`
-    .beat-hit::before { animation:none !important; transform:translate(${Math.random()*14-7}px, 0) skewX(${Math.random()*10-5}deg) !important; }
-    .beat-hit::after  { animation:none !important; transform:translate(${Math.random()*-14+7}px, 0) skewX(${Math.random()*-8+4}deg) !important; }
-    .strobe-on { opacity:0 !important; }
+// Dynamic style tag — updated every beat hit with new random offsets
+const glitchStyle = document.createElement('style');
+document.head.appendChild(glitchStyle);
+
+function setGlitchCSS(intensity){
+  const tx1 = (Math.random()-0.5)*intensity*18;
+  const tx2 = (Math.random()-0.5)*intensity*18;
+  const sk1 = (Math.random()-0.5)*intensity*12;
+  const sk2 = (Math.random()-0.5)*intensity*12;
+  const ty1 = (Math.random()-0.5)*intensity*4;
+  const ty2 = (Math.random()-0.5)*intensity*4;
+  // also randomise the clip slice positions
+  const c1a = Math.floor(Math.random()*80), c1b = c1a+5+Math.floor(Math.random()*30);
+  const c2a = Math.floor(Math.random()*80), c2b = c2a+5+Math.floor(Math.random()*30);
+  const c3a = Math.floor(Math.random()*80), c3b = c3a+5+Math.floor(Math.random()*20);
+  glitchStyle.textContent = `
+    .beat-hit::before {
+      animation: none !important;
+      transform: translate(${tx1}px,${ty1}px) skewX(${sk1}deg) !important;
+      clip-path: polygon(0 ${c1a}%,100% ${c1a}%,100% ${c1b}%,0 ${c1b}%) !important;
+      opacity: 1 !important;
+    }
+    .beat-hit::after {
+      animation: none !important;
+      transform: translate(${tx2}px,${ty2}px) skewX(${sk2}deg) !important;
+      clip-path: polygon(0 ${c2a}%,100% ${c2a}%,100% ${c2b}%,0 ${c2b}%) !important;
+      opacity: 1 !important;
+    }
+    .beat-hit .glitch-extra {
+      animation: none !important;
+      transform: translate(${-tx1*0.7}px,${ty2}px) !important;
+      clip-path: polygon(0 ${c3a}%,100% ${c3a}%,100% ${c3b}%,0 ${c3b}%) !important;
+      opacity: ${0.5+Math.random()*0.5} !important;
+    }
+    .strobe-on { opacity: 0 !important; }
   `;
-  document.head.appendChild(s);
-})();
+}
+// init
+setGlitchCSS(0.3);
 
 function animateLogo(bass){
   const hihat = getHihatEnergy();
-  smoothHihat = smoothHihat*0.6 + hihat*0.4;
+  smoothHihat = smoothHihat*0.55 + hihat*0.45;
 
-  // ── scale pulse on bass ───────────────────────────────────
-  const s = 1 + bass*0.12;
-  logoText.style.transform = `scale(${s},${1+bass*0.06})`;
+  // ── scale pulse ───────────────────────────────────────────
+  const s = 1 + bass*0.11;
 
-  // ── glow on bass — chromatic, no white blowout ───────────
-  if(bass > 0.15){
-    const b = Math.min(bass, 0.6); // cap so it never fully blows out
+  // ── logo BOX shake on bass hit ────────────────────────────
+  const transient = bass - prevSmoothBass;
+  if(transient > 0.04 && bass > 0.22){
+    logoShakeX = (Math.random()-0.5)*14*bass;
+    logoShakeY = (Math.random()-0.5)*10*bass;
+    glitchOffset = Math.min(1, glitchOffset + bass*1.2);
+  }
+  logoShakeX *= 0.65; logoShakeY *= 0.65;
+  glitchOffset *= 0.80;
+
+  // combine scale + shake into transform
+  logoText.style.transform =
+    `scale(${s},${1+bass*0.06}) translate(${logoShakeX}px,${logoShakeY}px)`;
+
+  // ── chromatic glow — pink/cyan/purple/green, NO white ─────
+  if(bass > 0.12){
+    const b = Math.min(bass, 0.65);
     logoText.style.textShadow =
-      `0 0 ${8+b*30}px rgba(255,0,200,${b*.8}),`+   // pink
-      `0 0 ${20+b*50}px rgba(0,255,200,${b*.6}),`+  // turquoise
-      `0 0 ${35+b*70}px rgba(140,0,255,${b*.5}),`+  // purple
-      `0 0 ${50+b*90}px rgba(0,255,80,${b*.25})`;   // green outer halo
+      `0 0 ${6+b*25}px rgba(255,0,200,${b*.85}),`+
+      `0 0 ${14+b*45}px rgba(0,255,210,${b*.65}),`+
+      `0 0 ${28+b*65}px rgba(150,0,255,${b*.5}),`+
+      `0 0 ${45+b*85}px rgba(0,255,90,${b*.22})`;
   } else {
     logoText.style.textShadow = '';
   }
 
-  // ── hihat 16th-note STROBE ────────────────────────────────
-  // When hihats are active, flicker the logo visibility rapidly
-  // creating a stuttery 16th-note strobe effect
-  if(smoothHihat > 0.055){
-    // toggle strobe every ~2 frames for rapid flutter
+  // ── HIHAT 16th-note strobe ────────────────────────────────
+  // probability scales with hihat intensity — more hats = more flicker
+  if(smoothHihat > 0.04){
     strobeState = !strobeState;
-    if(strobeState && Math.random() < smoothHihat*1.4){
+    const flickerProb = smoothHihat * 1.6;
+    if(strobeState && Math.random() < flickerProb){
       logoText.classList.add('strobe-on');
     } else {
       logoText.classList.remove('strobe-on');
+    }
+    // also randomly offset the glitch layers for visual noise
+    if(Math.random() < smoothHihat * 0.8){
+      setGlitchCSS(smoothHihat * 0.6 + glitchOffset * 0.4);
     }
   } else {
     logoText.classList.remove('strobe-on');
     strobeState = false;
   }
 
-  // ── bass transient: hard glitch slam ─────────────────────
-  const transient = bass - prevSmoothBass;
-  if(bass > 0.28 && transient > 0.045){
+  // ── BASS TRANSIENT: hard glitch slam ─────────────────────
+  if(transient > 0.045 && bass > 0.26){
+    setGlitchCSS(bass * 1.0); // regen random slice positions
     logoText.classList.add('beat-hit');
-    glitchTimer = 4;
+    glitchTimer = 5 + Math.floor(bass * 4); // hold longer on harder hits
   }
   if(glitchTimer > 0){
     glitchTimer--;
-    if(glitchTimer===0) logoText.classList.remove('beat-hit');
+    // keep refreshing the random offsets while held for extra chaos
+    if(glitchTimer > 0 && glitchTimer % 2 === 0) setGlitchCSS(bass*0.7);
+    if(glitchTimer === 0) logoText.classList.remove('beat-hit');
   }
 }
 
