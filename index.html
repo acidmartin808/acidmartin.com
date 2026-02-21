@@ -177,7 +177,6 @@ const lctx = boltCanvas.getContext('2d');
 function resize() {
   W = window.innerWidth; H = window.innerHeight; cx = W/2; cy = H/2;
   [blobCanvas, tunnelCanvas, particleCanvas, boltCanvas].forEach(c => { c.width=W; c.height=H; });
-  lavaCanvas.width=W; lavaCanvas.height=H;
 }
 window.addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
 window.addEventListener('touchmove', e => { mouse.x=e.touches[0].clientX; mouse.y=e.touches[0].clientY; }, {passive:true});
@@ -306,6 +305,7 @@ function drawParticles(bass){
   }
 }
 
+
 // ─── LIGHTNING ────────────────────────────────────────────
 function lightningBolt(ctx,x1,y1,x2,y2,rough,depth){
   if(depth<=0){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();return;}
@@ -322,7 +322,7 @@ function updateLogoCenter(){
   logoCenter={x:r.left+r.width/2,y:r.top+r.height/2};
 }
 setTimeout(updateLogoCenter,200);
-window.addEventListener('resize',()=>{updateLogoCenter();updateBlobOrbits();});
+window.addEventListener('resize', updateLogoCenter);
 
 let prevBass=0;
 const BOLT_HUES=[180,285,55,320];
@@ -330,18 +330,19 @@ const BOLT_HUES=[180,285,55,320];
 function drawBolts(bass){
   lctx.clearRect(0,0,W,H);
   const transient=bass-prevBass;
-  if(transient>0.05&&bass>0.18){
-    const count=2+Math.floor(transient*20);
-    for(let i=0;i<Math.min(count,5);i++){
+  // Fire on moderate transients — low threshold so they appear frequently
+  if(transient>0.04 && bass>0.15){
+    const count=2+Math.floor(transient*25);
+    for(let i=0;i<Math.min(count,6);i++){
       const angle=Math.random()*Math.PI*2;
-      const len=100+Math.random()*Math.min(W,H)*0.45;
+      const len=150+Math.random()*Math.min(W,H)*0.5;
       bolts.push({
-        x1:logoCenter.x,y1:logoCenter.y,
+        x1:logoCenter.x, y1:logoCenter.y,
         x2:logoCenter.x+Math.cos(angle)*len,
         y2:logoCenter.y+Math.sin(angle)*len,
-        life:1,decay:0.1+Math.random()*0.12,
+        life:1, decay:0.07+Math.random()*0.08,
         hue:BOLT_HUES[Math.floor(Math.random()*BOLT_HUES.length)],
-        rough:25+Math.random()*55,
+        rough:40+Math.random()*70,
       });
     }
   }
@@ -350,83 +351,106 @@ function drawBolts(bass){
     b.life-=b.decay;
     if(b.life<=0)return;
     const a=Math.max(0,b.life);
-    lctx.globalAlpha=a;
-    lctx.shadowBlur=18;lctx.shadowColor=hsl(b.hue,100,70);
-    lctx.strokeStyle=hsl(b.hue,100,80,0.85);
-    lctx.lineWidth=1.5;
+    // Thick outer glow pass
+    lctx.globalAlpha=a*0.6;
+    lctx.shadowBlur=30; lctx.shadowColor=hsl(b.hue,100,70);
+    lctx.strokeStyle=hsl(b.hue,100,75,1);
+    lctx.lineWidth=4;
     lightningBolt(lctx,b.x1,b.y1,b.x2,b.y2,b.rough,3);
-    lctx.strokeStyle='rgba(255,255,255,0.95)';
-    lctx.lineWidth=0.5;
-    lightningBolt(lctx,b.x1,b.y1,b.x2,b.y2,b.rough*.4,2);
-    lctx.globalAlpha=1;lctx.shadowBlur=0;
+    // Mid glow
+    lctx.globalAlpha=a*0.85;
+    lctx.shadowBlur=15;
+    lctx.strokeStyle=hsl(b.hue,100,85,1);
+    lctx.lineWidth=2;
+    lightningBolt(lctx,b.x1,b.y1,b.x2,b.y2,b.rough*0.7,3);
+    // Bright white core
+    lctx.globalAlpha=a;
+    lctx.shadowBlur=6;
+    lctx.strokeStyle='rgba(255,255,255,1)';
+    lctx.lineWidth=0.8;
+    lightningBolt(lctx,b.x1,b.y1,b.x2,b.y2,b.rough*0.35,2);
+    lctx.globalAlpha=1; lctx.shadowBlur=0;
   });
   prevBass=bass;
 }
 
-// ─── LAVA BLOBS AROUND LOGO ───────────────────────────────
-const lavaCanvas=document.createElement('canvas');
-lavaCanvas.style.cssText='position:fixed;inset:0;z-index:9;pointer-events:none;mix-blend-mode:screen;';
-document.body.appendChild(lavaCanvas);
-const lvctx=lavaCanvas.getContext('2d');
+// ─── BORDER WAVE CANVAS ───────────────────────────────────
+// Draws a traveling wave that runs around the border of the logo box
+// The rectangle border stays intact — waves ripple outward from it on beat
+const waveCanvas=document.createElement('canvas');
+waveCanvas.style.cssText='position:fixed;inset:0;z-index:11;pointer-events:none;';
+document.body.appendChild(waveCanvas);
+const wctx=waveCanvas.getContext('2d');
 
-const logoBlobs=Array.from({length:6},(_,i)=>({
-  angle:(i/6)*Math.PI*2,
-  speed:0.007+Math.random()*0.006,
-  r:16+Math.random()*12,
-  orbitR:0,cx:0,cy:0,
-  phase:Math.random()*Math.PI*2,
-  hue:(i/6)*360,
-  pop:0,
-}));
-
-function updateBlobOrbits(){
-  const rect=document.getElementById('logoBox').getBoundingClientRect();
-  const hw=rect.width/2,hh=rect.height/2;
-  const base=Math.sqrt(hw*hw+hh*hh)*0.78;
-  logoBlobs.forEach((b,i)=>{
-    b.orbitR=base+(i%2===0?14:-14);
-    b.cx=rect.left+rect.width/2;
-    b.cy=rect.top+rect.height/2;
-  });
+let borderRect={x:0,y:0,w:0,h:0};
+function updateBorderRect(){
+  const r=document.getElementById('logoBox').getBoundingClientRect();
+  borderRect={x:r.left,y:r.top,w:r.width,h:r.height};
 }
-setTimeout(updateBlobOrbits,250);
+setTimeout(updateBorderRect,250);
+window.addEventListener('resize',()=>{updateLogoCenter();updateBorderRect();waveCanvas.width=W;waveCanvas.height=H;});
 
-function drawLavaBlobs(bass){
-  lvctx.clearRect(0,0,W,H);
-  if(!logoBlobs[0].orbitR)return;
+// Each wave pulse: travels around the perimeter, expands outward, fades
+let wavePulses=[];
+let waveHue=180;
+
+function spawnWave(bass){
+  // spawn a new outward ring wave on bass transient
+  wavePulses.push({
+    offset:0,         // how far outward the ring has expanded (px)
+    life:1,
+    decay:0.035+Math.random()*0.025,
+    hue:waveHue,
+    thickness:2.5+bass*6,
+  });
+  waveHue=(waveHue+40)%360;
+}
+
+function drawBorderWaves(bass){
+  wctx.clearRect(0,0,W,H);
+  if(!borderRect.w)return;
+
+  const {x,y,w,h}=borderRect;
   const transient=Math.max(0,bass-prevBass);
-  logoBlobs.forEach(b=>{
-    b.angle+=b.speed+bass*0.03;
-    b.hue=(b.hue+0.3+bass*1.5)%360;
-    b.phase+=0.025;
-    if(transient>0.06)b.pop=Math.min(1,b.pop+transient*3);
-    b.pop*=0.9;
-    const popDist=b.orbitR+b.pop*140;
-    const wobble=Math.sin(b.phase)*14;
-    const x=b.cx+Math.cos(b.angle)*(popDist+wobble);
-    const y=b.cy+Math.sin(b.angle)*(popDist*0.72+wobble*0.6);
-    const br=b.r*(1+bass*1.0+b.pop*2.2);
-    const g=lvctx.createRadialGradient(x,y,0,x,y,br*2.8);
-    g.addColorStop(0,  hsl(b.hue,100,72,0.9+b.pop*0.1));
-    g.addColorStop(0.4,hsl((b.hue+40)%360,100,55,0.5));
-    g.addColorStop(1,  hsl((b.hue+80)%360,100,40,0));
-    lvctx.beginPath();
-    lvctx.arc(x,y,br*2.8,0,Math.PI*2);
-    lvctx.fillStyle=g;
-    lvctx.filter='blur(10px)';
-    lvctx.fill();
-    lvctx.filter='none';
-    const tx=b.cx+Math.cos(b.angle)*b.orbitR*0.45;
-    const ty=b.cy+Math.sin(b.angle)*b.orbitR*0.45*0.72;
-    const trail=lvctx.createLinearGradient(x,y,tx,ty);
-    trail.addColorStop(0,hsl(b.hue,100,65,0.35+b.pop*0.35));
-    trail.addColorStop(1,hsl(b.hue,100,65,0));
-    lvctx.beginPath();
-    lvctx.moveTo(x,y);lvctx.lineTo(tx,ty);
-    lvctx.strokeStyle=trail;
-    lvctx.lineWidth=br*0.7;
-    lvctx.lineCap='round';
-    lvctx.stroke();
+
+  // Spawn waves on bass hits
+  if(transient>0.05 && bass>0.15) spawnWave(bass);
+  // Also spawn gentle ambient waves when music is playing
+  if(audioReady && bass>0.05 && Math.random()<bass*0.15) spawnWave(bass*0.5);
+
+  wavePulses=wavePulses.filter(p=>p.life>0.01);
+
+  wavePulses.forEach(p=>{
+    p.life-=p.decay;
+    p.offset+=1.8+bass*4; // waves travel outward
+    if(p.life<=0)return;
+    const a=Math.max(0,p.life);
+    const expand=p.offset;
+
+    // Draw expanded rounded rect wave
+    const wx=x-expand, wy=y-expand;
+    const ww=w+expand*2, wh=h+expand*2;
+    const radius=expand*0.4; // slight rounding grows with expansion
+
+    wctx.beginPath();
+    wctx.moveTo(wx+radius,wy);
+    wctx.lineTo(wx+ww-radius,wy);
+    wctx.quadraticCurveTo(wx+ww,wy,wx+ww,wy+radius);
+    wctx.lineTo(wx+ww,wy+wh-radius);
+    wctx.quadraticCurveTo(wx+ww,wy+wh,wx+ww-radius,wy+wh);
+    wctx.lineTo(wx+radius,wy+wh);
+    wctx.quadraticCurveTo(wx,wy+wh,wx,wy+wh-radius);
+    wctx.lineTo(wx,wy+radius);
+    wctx.quadraticCurveTo(wx,wy,wx+radius,wy);
+    wctx.closePath();
+
+    // Glow
+    wctx.shadowBlur=12+bass*20;
+    wctx.shadowColor=hsl(p.hue,100,65,a);
+    wctx.strokeStyle=hsl(p.hue,100,75,a*(0.7+bass*0.3));
+    wctx.lineWidth=p.thickness*(0.3+a*0.7); // thins as it fades
+    wctx.stroke();
+    wctx.shadowBlur=0;
   });
 }
 
@@ -434,34 +458,35 @@ function drawLavaBlobs(bass){
 const logoText=document.getElementById('logoText');
 const logoBox=document.getElementById('logoBox');
 let strobePhase=0;
-let glitchT=0;
 
 function animateLogo(bass,hihat){
   const s=1+bass*0.09;
+
+  // Hi-hat strobe
   strobePhase+=0.52;
   const strobeTick=Math.sin(strobePhase)>0.55;
-  if(hihat>0.12&&strobeTick){
-    logoText.style.opacity=0.08+Math.random()*0.45;
+  if(hihat>0.14&&strobeTick){
+    logoText.style.opacity=0.12+Math.random()*0.45;
   } else {
     logoText.style.opacity=1;
   }
-  glitchT+=0.05+bass*0.25+hihat*0.35;
-  const glitchAmp=bass*24+hihat*14;
-  if(glitchAmp>1.5){
+
+  // Glitch — dialed back sensitivity, still reactive
+  const glitchAmp=bass*14+hihat*7;
+  if(glitchAmp>2){
     const gx=(Math.random()-.5)*glitchAmp;
-    const gy=(Math.random()-.5)*glitchAmp*0.5;
-    const skew=(Math.random()-.5)*glitchAmp*0.5;
+    const gy=(Math.random()-.5)*glitchAmp*0.4;
+    const skew=(Math.random()-.5)*glitchAmp*0.3;
     logoText.style.textShadow=
-      `${gx*1.3}px ${gy}px 0 rgba(255,0,255,${0.7+bass*0.3}),`+
-      `${-gx*1.3}px ${-gy}px 0 rgba(0,255,255,${0.7+bass*0.3}),`+
-      `${gx*0.5}px 0 0 rgba(255,255,0,${bass*0.6}),`+
-      `0 0 ${20+bass*70}px rgba(255,255,255,${bass*0.85})`;
-    const bigHit=bass>0.32&&Math.random()<bass*0.55;
+      `${gx}px ${gy}px 0 rgba(255,0,255,${0.6+bass*0.3}),`+
+      `${-gx}px ${-gy}px 0 rgba(0,255,255,${0.6+bass*0.3}),`+
+      `0 0 ${15+bass*55}px rgba(255,255,255,${bass*0.75})`;
+    const bigHit=bass>0.38&&Math.random()<bass*0.4;
     if(bigHit){
-      logoText.style.transform=`scale(${s},${1+bass*0.045}) translate(${gx*2.2}px,${gy*1.5}px) skewX(${skew*1.8}deg) scaleX(${1+Math.random()*bass*0.18})`;
-      logoText.style.filter=`brightness(${1.6+bass}) contrast(${1.3+bass*0.5}) hue-rotate(${Math.random()*360}deg)`;
+      logoText.style.transform=`scale(${s},${1+bass*0.045}) translate(${gx*1.6}px,${gy}px) skewX(${skew*1.2}deg)`;
+      logoText.style.filter=`brightness(${1.4+bass}) contrast(${1.2+bass*0.4}) hue-rotate(${Math.random()*360}deg)`;
     } else {
-      logoText.style.transform=`scale(${s},${1+bass*0.045}) translate(${gx*0.5}px,${gy*0.3}px) skewX(${skew*0.4}deg)`;
+      logoText.style.transform=`scale(${s},${1+bass*0.045}) translate(${gx*0.3}px,0px)`;
       logoText.style.filter='';
     }
   } else {
@@ -469,32 +494,33 @@ function animateLogo(bass,hihat){
     logoText.style.transform=`scale(${s},${1+bass*0.045})`;
     logoText.style.filter='';
   }
+
+  // Border glow
   if(bass>0.2){
     logoBox.style.boxShadow=
-      `0 0 ${20+bass*50}px rgba(255,0,255,${bass*0.55}),`+
-      `0 0 ${40+bass*70}px rgba(0,255,255,${bass*0.35})`;
+      `0 0 ${15+bass*40}px rgba(255,0,255,${bass*0.5}),`+
+      `0 0 ${30+bass*60}px rgba(0,255,255,${bass*0.3})`;
   } else {
     logoBox.style.boxShadow='';
   }
 }
-
 
 // ─── MAIN LOOP ────────────────────────────────────────────
 resize();
 
 function loop(){
   const rawBass  = getFreqBand(20, 250);
-  const rawHihat = getFreqBand(8000, 16000); // hi-hats live up here
+  const rawHihat = getFreqBand(8000, 16000);
   smoothBass  = smoothBass  * 0.72 + rawBass  * 0.28;
-  smoothHihat = smoothHihat * 0.55 + rawHihat * 0.45; // less smoothing = snappier strobe
+  smoothHihat = smoothHihat * 0.55 + rawHihat * 0.45;
   const bass  = smoothBass;
   const hihat = smoothHihat;
 
   drawBlobs(bass);
   drawTunnel(bass);
   drawParticles(bass);
-  drawLavaBlobs(bass);
   drawBolts(bass);
+  drawBorderWaves(bass);
   animateLogo(bass, hihat);
 
   requestAnimationFrame(loop);
