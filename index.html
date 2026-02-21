@@ -458,90 +458,96 @@ function drawLightning(bass){
   }
 }
 
-// ── AUDIO SPECTRUM BORDER (top+bottom of logo box) ────────────
-// Smooth per-bar values
-let barSmooth = null;
+// ── AUDIO SPECTRUM WAVEFORM (top + bottom of logo box) ────────
+const WAVE_PTS = 128;
+let waveSmooth    = new Float32Array(WAVE_PTS);
+let waveSmoothBot = new Float32Array(WAVE_PTS);
 let specHue = 0;
 
 function drawSpectrumBorder(bass){
   sctx.clearRect(0,0,W,H);
-  if(!boxRect || !audioReady) return;
 
-  const bx = boxRect.left, by = boxRect.top;
-  const bw = boxRect.width, bh = boxRect.height;
+  const bx = boxRect ? boxRect.left   : cx - 200;
+  const by = boxRect ? boxRect.top    : cy - 60;
+  const bw = boxRect ? boxRect.width  : 400;
+  const bh = boxRect ? boxRect.height : 120;
 
-  // Number of bars scales with box width
-  const numBars = Math.floor(bw / 4);
-  if(!barSmooth || barSmooth.length !== numBars*2){
-    barSmooth = new Float32Array(numBars*2);
+  specHue = (specHue + 0.5 + bass * 2.0) % 360;
+
+  const maxAmp  = 40 + bass * 70;
+  const specEnd = audioReady ? Math.floor(bufferLength * 0.6) : 0;
+
+  // smooth top wave: low→high freq left→right
+  for(let i=0;i<WAVE_PTS;i++){
+    const raw = audioReady ? (freqData[Math.floor((i/WAVE_PTS)*specEnd)]||0)/255 : 0;
+    waveSmooth[i] = waveSmooth[i]*0.68 + raw*0.32;
+  }
+  // smooth bottom wave: reversed (high→low left→right)
+  for(let i=0;i<WAVE_PTS;i++){
+    const raw = audioReady ? (freqData[Math.floor(((WAVE_PTS-1-i)/WAVE_PTS)*specEnd)]||0)/255 : 0;
+    waveSmoothBot[i] = waveSmoothBot[i]*0.68 + raw*0.32;
   }
 
-  // Get full frequency spectrum
-  const fftLen = bufferLength; // 1024
-  // Map bars to lower 60% of spectrum (musical range)
-  const specEnd = Math.floor(fftLen * 0.55);
-  const maxBarH = 44 + bass * 60; // max bar height in px
+  function drawWave(arr, edgeY, dir /* -1=up +1=down */, hueBase){
+    const tipGrad = sctx.createLinearGradient(0, edgeY, 0, edgeY + dir*maxAmp);
+    tipGrad.addColorStop(0, hsl(hueBase,100,60,0.08));
+    tipGrad.addColorStop(1, hsl((hueBase+80)%360,100,78,0.85));
 
-  specHue = (specHue + 0.4 + bass * 1.5) % 360;
+    // filled area
+    sctx.save();
+    sctx.beginPath();
+    sctx.moveTo(bx, edgeY);
+    for(let i=0;i<WAVE_PTS;i++){
+      const px = bx + (i/(WAVE_PTS-1))*bw;
+      const py = edgeY + dir * arr[i] * maxAmp;
+      sctx.lineTo(px, py);
+    }
+    sctx.lineTo(bx+bw, edgeY);
+    sctx.closePath();
+    sctx.fillStyle = tipGrad;
+    sctx.fill();
 
-  // ── TOP EDGE (bars grow upward from top of box) ───────────
-  for(let i=0;i<numBars;i++){
-    const binIdx = Math.floor((i / numBars) * specEnd);
-    const raw = (freqData[binIdx] || 0) / 255;
-    // smooth each bar independently
-    barSmooth[i] = barSmooth[i] * 0.72 + raw * 0.28;
-    const barH = barSmooth[i] * maxBarH;
-    if(barH < 0.5) continue;
+    // glowing stroke line
+    sctx.shadowBlur  = 12 + bass*20;
+    sctx.shadowColor = hsl(hueBase, 100, 70);
+    sctx.strokeStyle = hsl((hueBase+60)%360, 100, 82, 0.9);
+    sctx.lineWidth   = 2;
+    sctx.beginPath();
+    sctx.moveTo(bx, edgeY + dir * arr[0] * maxAmp);
+    for(let i=1;i<WAVE_PTS;i++){
+      const px = bx + (i/(WAVE_PTS-1))*bw;
+      const py = edgeY + dir * arr[i] * maxAmp;
+      sctx.lineTo(px, py);
+    }
+    sctx.stroke();
 
-    const barX = bx + (i / numBars) * bw;
-    const barW = (bw / numBars) - 1;
-    const barY = by - barH; // grow upward
-
-    const hue = (specHue + (i / numBars) * 120) % 360;
-    const g = sctx.createLinearGradient(barX, by, barX, barY);
-    g.addColorStop(0, hsl(hue, 100, 55, 0.3));
-    g.addColorStop(1, hsl((hue+40)%360, 100, 80, 0.95));
-    sctx.fillStyle = g;
-    sctx.shadowBlur = 8 + bass * 12;
-    sctx.shadowColor = hsl(hue, 100, 70);
-    sctx.fillRect(barX, barY, barW, barH);
+    // bright white highlight on the ridge
+    sctx.shadowBlur  = 4;
+    sctx.strokeStyle = `rgba(255,255,255,${0.3+bass*0.55})`;
+    sctx.lineWidth   = 1;
+    sctx.beginPath();
+    sctx.moveTo(bx, edgeY + dir * arr[0] * maxAmp);
+    for(let i=1;i<WAVE_PTS;i++){
+      const px = bx + (i/(WAVE_PTS-1))*bw;
+      const py = edgeY + dir * arr[i] * maxAmp;
+      sctx.lineTo(px, py);
+    }
+    sctx.stroke();
+    sctx.restore();
   }
 
-  // ── BOTTOM EDGE (bars grow downward, reversed & phase-shifted) ─
-  const phaseShift = Math.floor(numBars * 0.3); // offset bins = syncopation
-  const bottomHueOffset = 180; // complementary colour
-  for(let i=0;i<numBars;i++){
-    // reversed + phase-shifted bin map
-    const mirrorI = numBars - 1 - i;
-    const binIdx  = Math.floor(((mirrorI + phaseShift) % numBars / numBars) * specEnd);
-    const raw = (freqData[binIdx] || 0) / 255;
-    barSmooth[numBars+i] = barSmooth[numBars+i] * 0.72 + raw * 0.28;
-    const barH = barSmooth[numBars+i] * maxBarH;
-    if(barH < 0.5) continue;
+  // TOP grows upward from top edge
+  drawWave(waveSmooth,    by,      -1, specHue);
+  // BOTTOM grows downward, reversed spectrum
+  drawWave(waveSmoothBot, by + bh,  1, (specHue + 150) % 360);
 
-    const barX = bx + (i / numBars) * bw;
-    const barW = (bw / numBars) - 1;
-    const barYStart = by + bh; // bottom of box
-    const hue = (specHue + bottomHueOffset + (i / numBars) * 120) % 360;
-
-    const g = sctx.createLinearGradient(barX, barYStart, barX, barYStart + barH);
-    g.addColorStop(0, hsl(hue, 100, 55, 0.3));
-    g.addColorStop(1, hsl((hue+40)%360, 100, 80, 0.95));
-    sctx.fillStyle = g;
-    sctx.shadowBlur = 8 + bass * 12;
-    sctx.shadowColor = hsl(hue, 100, 70);
-    sctx.fillRect(barX, barYStart, barW, barH);
-  }
-
-  sctx.shadowBlur = 0;
-
-  // Draw the static side lines (white thin glow)
-  sctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  // Static side lines
+  sctx.save();
+  sctx.strokeStyle = 'rgba(255,255,255,0.15)';
   sctx.lineWidth = 1;
-  // left side
-  sctx.beginPath(); sctx.moveTo(bx, by); sctx.lineTo(bx, by+bh); sctx.stroke();
-  // right side
+  sctx.beginPath(); sctx.moveTo(bx,    by); sctx.lineTo(bx,    by+bh); sctx.stroke();
   sctx.beginPath(); sctx.moveTo(bx+bw, by); sctx.lineTo(bx+bw, by+bh); sctx.stroke();
+  sctx.restore();
 }
 
 // ── LOGO GLITCH — JS-DRIVEN BEAT GLITCH ──────────────────────
