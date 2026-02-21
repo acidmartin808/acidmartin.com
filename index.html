@@ -233,6 +233,7 @@ const SPOKE_N=12;
 // Global spin direction flips on beat — all spokes reverse together
 let globalRotDir=1;
 let dirFlipCooldown=0;
+let autoFlipTimer=0; // also flips on a timer so it's always visible
 
 const spokes=Array.from({length:SPOKE_N},(_,i)=>({
   baseAngle:(i/SPOKE_N)*Math.PI*2,
@@ -241,7 +242,7 @@ const spokes=Array.from({length:SPOKE_N},(_,i)=>({
   morphT:0,
   morphTarget:0,
   boltPts:[],
-  rotSpeed:.007+Math.random()*.005,
+  rotSpeed:.014+Math.random()*.010,
 }));
 let spokeCooldown=0;
 
@@ -265,6 +266,17 @@ function drawTunnel(bass){
     tctx.beginPath();tctx.arc(cx,cy,r,0,Math.PI*2);
     tctx.strokeStyle=hsl(hue,80,10+depth*20,.10+depth*.14+bass*.16);
     tctx.lineWidth=1+bass*2;tctx.stroke();
+  }
+
+  // ── flip rotation direction on beat OR every ~2s automatically ──
+  dirFlipCooldown=Math.max(0,dirFlipCooldown-1);
+  autoFlipTimer++;
+  // flip on big bass hit (with cooldown so it doesn't flutter)
+  // OR auto-flip every ~120 frames (~2s) so it's always visible
+  if((bigHit && dirFlipCooldown===0) || autoFlipTimer>120){
+    globalRotDir*=-1;
+    dirFlipCooldown=50;
+    autoFlipTimer=0;
   }
 
   // ── trigger lightning morph on beat ───────────────────────
