@@ -236,80 +236,150 @@ function drawTunnel(bass){
   tt+=.011;
 }
 
-// ── PARTICLES — fast tracking + beat bounce ────────────────────
-const ORBIT_N=30,BG_N=55,CDIST=130;
+// ── PARTICLES — orbit + gravitational floaters + cursor rings ──
+const ORBIT_N=30, CDIST=130;
+
 const orbitParticles=Array.from({length:ORBIT_N},(_,i)=>({
-  x:Math.random()*innerWidth,y:Math.random()*innerHeight,
-  vx:0,vy:0,
-  r:2+Math.random()*2.2,hue:(i/ORBIT_N)*360,
+  x:Math.random()*innerWidth, y:Math.random()*innerHeight,
+  vx:0, vy:0,
+  r:2+Math.random()*2.2, hue:(i/ORBIT_N)*360,
   orbitR:28+Math.random()*80,
-  orbitSpeed:(Math.random()>.5?1:-1)*(.032+Math.random()*.04),
+  // slower orbit — felt better in original
+  orbitSpeed:(Math.random()>.5?1:-1)*(.022+Math.random()*.028),
   orbitAngle:Math.random()*Math.PI*2,
-  bounceVel:0,popScale:1,
+  bounceVel:0, popScale:1,
 }));
-const bgParticles=Array.from({length:BG_N},()=>({
-  x:Math.random()*innerWidth,y:Math.random()*innerHeight,
-  vx:(Math.random()-.5)*.35,vy:(Math.random()-.5)*.35,
-  r:1+Math.random()*1.5,hue:Math.random()*360,
+
+// Gravitational floaters — drift freely, get pulled toward cursor,
+// occasionally escape back out. More than bg drifters, less committed.
+const FLOAT_N=70;
+const floaters=Array.from({length:FLOAT_N},()=>({
+  x:Math.random()*innerWidth, y:Math.random()*innerHeight,
+  vx:(Math.random()-.5)*.6, vy:(Math.random()-.5)*.6,
+  r:.8+Math.random()*1.6, hue:Math.random()*360,
+  // each floater has its own pull radius and escape threshold
+  pullRadius:180+Math.random()*260,
+  escapePower:.004+Math.random()*.008, // how hard gravity pulls
+  escapeVel:2+Math.random()*3,         // speed at which they fly away
+  escaped:false, escapeCooldown:0,
 }));
+
+// Cursor rings — 3 electric rings around the cursor like the reference
+const cursorRings=[
+  {r:18,phase:0,speed:.05},
+  {r:36,phase:2.1,speed:-.035},
+  {r:58,phase:4.2,speed:.025},
+];
+let cursorTime=0;
 
 function drawParticles(bass){
   pctx.clearRect(0,0,W,H);
   const transient=bass-prevSmoothBass;
   const bigHit=transient>0.04&&bass>0.20;
 
-  // bg drifters
-  bgParticles.forEach(p=>{
-    p.x+=p.vx;p.y+=p.vy;
+  // ── cursor rings ────────────────────────────────────────────
+  if(mouse.x>0){
+    cursorRings.forEach(ring=>{
+      ring.phase+=ring.speed+bass*.12;
+      const pts=20;
+      pctx.beginPath();
+      for(let i=0;i<=pts;i++){
+        const a=(i/pts)*Math.PI*2+ring.phase;
+        const jitter=ring.r*(1+bass*1.6)+(Math.random()-.5)*8*(1+bass*3);
+        const x=mouse.x+Math.cos(a)*jitter;
+        const y=mouse.y+Math.sin(a)*jitter;
+        i===0?pctx.moveTo(x,y):pctx.lineTo(x,y);
+      }
+      pctx.closePath();
+      pctx.strokeStyle=hsl((cursorTime*80+ring.r*4)%360,100,72,.35+bass*.65);
+      pctx.lineWidth=1+bass*2; pctx.stroke();
+    });
+  }
+  cursorTime+=.016;
+
+  // ── gravitational floaters ───────────────────────────────────
+  floaters.forEach(p=>{
+    p.escapeCooldown=Math.max(0,p.escapeCooldown-1);
+    const mdx=mouse.x-p.x, mdy=mouse.y-p.y;
+    const md=Math.sqrt(mdx*mdx+mdy*mdy);
+
+    if(!p.escaped && md<p.pullRadius && mouse.x>-100){
+      // pulled toward cursor — softly
+      const f=((p.pullRadius-md)/p.pullRadius)*p.escapePower*(1+bass*2);
+      p.vx+=mdx*f; p.vy+=mdy*f;
+      // if they get too close, fling them back out
+      if(md<40+bass*30){
+        p.escaped=true; p.escapeCooldown=90+Math.floor(Math.random()*120);
+        const escA=Math.atan2(p.y-mouse.y,p.x-mouse.x);
+        p.vx+=Math.cos(escA)*p.escapeVel*(1+bass*2);
+        p.vy+=Math.sin(escA)*p.escapeVel*(1+bass*2);
+      }
+    } else {
+      // gentle drift back toward random motion, reset escape
+      if(p.escapeCooldown===0) p.escaped=false;
+    }
+
+    // bass kicks floaters outward from center
+    const cdx=p.x-cx, cdy=p.y-cy, cdist=Math.sqrt(cdx*cdx+cdy*cdy);
+    if(cdist>0){ p.vx+=(cdx/cdist)*bass*.8; p.vy+=(cdy/cdist)*bass*.8; }
+
+    p.x+=p.vx; p.y+=p.vy;
+    const spd=Math.sqrt(p.vx*p.vx+p.vy*p.vy);
+    if(spd>5+bass*3){p.vx=p.vx/spd*(5+bass*3); p.vy=p.vy/spd*(5+bass*3);}
+    p.vx*=.985; p.vy*=.985; // very gentle friction so they keep drifting
     if(p.x<0)p.x=W;if(p.x>W)p.x=0;if(p.y<0)p.y=H;if(p.y>H)p.y=0;
-    p.hue=(p.hue+.18)%360;
-    pctx.beginPath();pctx.arc(p.x,p.y,p.r*(1+bass*.8),0,Math.PI*2);
-    pctx.fillStyle=hsl(p.hue,100,70,.4);pctx.fill();
+    p.hue=(p.hue+.2+bass*2)%360;
+
+    const inPull=md<p.pullRadius&&!p.escaped&&mouse.x>-100;
+    const alpha=inPull?.7:.35;
+    const dr=p.r*(1+bass*2)*(inPull?1.3:1);
+    pctx.beginPath(); pctx.arc(p.x,p.y,dr,0,Math.PI*2);
+    pctx.fillStyle=hsl(p.hue,100,75+bass*15,alpha); pctx.fill();
   });
 
-  // orbit orbs — tight fast tracking, pop on beat
+  // ── 30 orbit orbs — slower, still beat-reactive ─────────────
   orbitParticles.forEach(p=>{
-    // beat: instant outward pop, spring back
     if(bigHit){
-      p.bounceVel+=(Math.random()-.5)*bass*70;
-      p.popScale=1+bass*2.8;
+      p.bounceVel+=(Math.random()-.5)*bass*60;
+      p.popScale=1+bass*2.5;
     }
-    p.bounceVel*=0.80;
-    p.popScale+=(1-p.popScale)*0.16;
+    p.bounceVel*=0.82;
+    p.popScale+=(1-p.popScale)*0.14;
 
     if(mouse.x>-100){
-      p.orbitAngle+=p.orbitSpeed*(1+bass*3.5);
+      // slower orbit speed + moderate bass boost (was 3.5x, now 2x)
+      p.orbitAngle+=p.orbitSpeed*(1+bass*2.0);
       const targetR=p.orbitR+p.bounceVel;
       const tx=mouse.x+Math.cos(p.orbitAngle)*targetR;
       const ty=mouse.y+Math.sin(p.orbitAngle)*targetR;
-      // fast tracking: 0.06 lerp strength (was 0.018)
-      p.vx+=(tx-p.x)*0.06;
-      p.vy+=(ty-p.y)*0.06;
+      // softer tracking: 0.035 (was 0.06, original was 0.015)
+      p.vx+=(tx-p.x)*0.035;
+      p.vy+=(ty-p.y)*0.035;
     }
-    p.x+=p.vx;p.y+=p.vy;
-    // tight damping so they stay close to cursor
-    p.vx*=0.75;p.vy*=0.75;
+    p.x+=p.vx; p.y+=p.vy;
+    // slightly less aggressive damping = more floaty feel
+    p.vx*=0.82; p.vy*=0.82;
     if(p.x<0)p.x=W;if(p.x>W)p.x=0;if(p.y<0)p.y=H;if(p.y>H)p.y=0;
-    p.hue=(p.hue+.3)%360;
+    p.hue=(p.hue+.28)%360;
 
-    const drawR=p.r*p.popScale*(1+bass*1.4);
-    pctx.shadowBlur=10+bass*24;
+    const drawR=p.r*p.popScale*(1+bass*1.2);
+    pctx.shadowBlur=10+bass*22;
     pctx.shadowColor=hsl(p.hue,100,70);
-    pctx.beginPath();pctx.arc(p.x,p.y,drawR,0,Math.PI*2);
-    pctx.fillStyle=hsl(p.hue,100,82,.95);pctx.fill();
+    pctx.beginPath(); pctx.arc(p.x,p.y,drawR,0,Math.PI*2);
+    pctx.fillStyle=hsl(p.hue,100,82,.95); pctx.fill();
     pctx.shadowBlur=0;
   });
 
-  // connections within orbit group only
+  // connections within orbit group only (450 checks)
   for(let i=0;i<ORBIT_N;i++){
     for(let j=i+1;j<ORBIT_N;j++){
       const a=orbitParticles[i],b=orbitParticles[j];
       const dx=a.x-b.x,dy=a.y-b.y,dist=Math.sqrt(dx*dx+dy*dy);
       if(dist<CDIST){
         const alpha=(1-dist/CDIST)*(.65+bass*.35);
-        pctx.beginPath();pctx.moveTo(a.x,a.y);pctx.lineTo(b.x,b.y);
+        pctx.beginPath(); pctx.moveTo(a.x,a.y); pctx.lineTo(b.x,b.y);
         pctx.strokeStyle=hsl((a.hue+b.hue)/2,100,75,alpha);
-        pctx.lineWidth=.8+bass*.6;pctx.stroke();
+        pctx.lineWidth=.8+bass*.6; pctx.stroke();
       }
     }
   }
@@ -380,77 +450,88 @@ const glitchStyle=document.createElement('style');
 document.head.appendChild(glitchStyle);
 
 function setGlitchCSS(intensity){
-  const tx1=(Math.random()-.5)*intensity*24,tx2=(Math.random()-.5)*intensity*24;
-  const ty1=(Math.random()-.5)*intensity*7, ty2=(Math.random()-.5)*intensity*7;
-  const sk1=(Math.random()-.5)*intensity*18,sk2=(Math.random()-.5)*intensity*18;
-  const c1a=Math.floor(Math.random()*75),c1b=c1a+8+Math.floor(Math.random()*32);
-  const c2a=Math.floor(Math.random()*75),c2b=c2a+8+Math.floor(Math.random()*32);
-  const c3a=Math.floor(Math.random()*75),c3b=c3a+5+Math.floor(Math.random()*24);
+  const tx1=(Math.random()-.5)*intensity*32, tx2=(Math.random()-.5)*intensity*32;
+  const ty1=(Math.random()-.5)*intensity*10, ty2=(Math.random()-.5)*intensity*10;
+  const sk1=(Math.random()-.5)*intensity*22, sk2=(Math.random()-.5)*intensity*22;
+  const c1a=Math.floor(Math.random()*70), c1b=c1a+10+Math.floor(Math.random()*35);
+  const c2a=Math.floor(Math.random()*70), c2b=c2a+10+Math.floor(Math.random()*35);
+  const c3a=Math.floor(Math.random()*70), c3b=c3a+6+Math.floor(Math.random()*28);
+  // randomly pick from the color vars for more chaos
+  const colors=['#ff00ff','#00ffff','#ff6600','#00ff66','#6600ff','#ff0088','#00ffff'];
+  const col1=colors[Math.floor(Math.random()*colors.length)];
+  const col2=colors[Math.floor(Math.random()*colors.length)];
   glitchStyle.textContent=`
-    .beat-hit::before{animation:none !important;transform:translate(${tx1}px,${ty1}px) skewX(${sk1}deg) !important;clip-path:polygon(0 ${c1a}%,100% ${c1a}%,100% ${c1b}%,0 ${c1b}%) !important;opacity:1 !important;}
-    .beat-hit::after{animation:none !important;transform:translate(${tx2}px,${ty2}px) skewX(${sk2}deg) !important;clip-path:polygon(0 ${c2a}%,100% ${c2a}%,100% ${c2b}%,0 ${c2b}%) !important;opacity:1 !important;}
-    .beat-hit .glitch-extra{animation:none !important;transform:translate(${-tx1*.6}px,${ty2}px) skewX(${-sk2*.5}deg) !important;clip-path:polygon(0 ${c3a}%,100% ${c3a}%,100% ${c3b}%,0 ${c3b}%) !important;opacity:${.6+Math.random()*.4} !important;}
+    .beat-hit::before{animation:none !important;color:${col1} !important;transform:translate(${tx1}px,${ty1}px) skewX(${sk1}deg) !important;clip-path:polygon(0 ${c1a}%,100% ${c1a}%,100% ${c1b}%,0 ${c1b}%) !important;opacity:1 !important;}
+    .beat-hit::after{animation:none !important;color:${col2} !important;transform:translate(${tx2}px,${ty2}px) skewX(${sk2}deg) !important;clip-path:polygon(0 ${c2a}%,100% ${c2a}%,100% ${c2b}%,0 ${c2b}%) !important;opacity:1 !important;}
+    .beat-hit .glitch-extra{animation:none !important;transform:translate(${-tx1*.7}px,${ty2*.8}px) skewX(${-sk2*.6}deg) !important;clip-path:polygon(0 ${c3a}%,100% ${c3a}%,100% ${c3b}%,0 ${c3b}%) !important;opacity:${.7+Math.random()*.3} !important;}
   `;
 }
 setGlitchCSS(0.3);
 
 function animateLogo(bass){
   const hihat=getHihatEnergy();
-  smoothHihat=smoothHihat*.52+hihat*.48;
+  smoothHihat=smoothHihat*.48+hihat*.52; // faster hihat response
   const transient=bass-prevSmoothBass;
-  const bigHit=transient>0.030&&bass>0.18;
+  const bigHit=transient>0.028&&bass>0.16; // lower threshold = fires more
 
-  // pop scale — instant expand, spring back
-  if(bigHit) logoPopScale=1+bass*0.25;
-  logoPopScale+=(1-logoPopScale)*0.13;
+  // pop scale
+  if(bigHit) logoPopScale=1+bass*0.28;
+  logoPopScale+=(1-logoPopScale)*0.12;
 
-  // shake
+  // shake — harder
   if(bigHit){
-    logoShakeX=(Math.random()-.5)*30*bass;
-    logoShakeY=(Math.random()-.5)*22*bass;
-    glitchOffset=Math.min(1,glitchOffset+bass*1.8);
+    logoShakeX=(Math.random()-.5)*36*bass;
+    logoShakeY=(Math.random()-.5)*26*bass;
+    glitchOffset=Math.min(1,glitchOffset+bass*2.0);
   }
-  logoShakeX*=0.52;logoShakeY*=0.52;
-  glitchOffset*=0.74;
+  logoShakeX*=0.50; logoShakeY*=0.50; // snappy decay
+  glitchOffset*=0.72;
 
   const s=logoPopScale*(1+bass*0.07);
   logoText.style.transform=`scale(${s},${logoPopScale*(1+bass*0.04)}) translate(${logoShakeX}px,${logoShakeY}px)`;
 
   // chromatic glow, no white
-  if(bass>0.09){
-    const b=Math.min(bass,0.72);
+  if(bass>0.08){
+    const b=Math.min(bass,0.75);
     logoText.style.textShadow=
-      `0 0 ${4+b*20}px rgba(255,0,200,${b*.92}),`+
-      `0 0 ${10+b*38}px rgba(0,255,210,${b*.72}),`+
-      `0 0 ${22+b*58}px rgba(150,0,255,${b*.58}),`+
-      `0 0 ${38+b*78}px rgba(0,255,90,${b*.28})`;
+      `0 0 ${4+b*22}px rgba(255,0,200,${b*.95}),`+
+      `0 0 ${10+b*40}px rgba(0,255,210,${b*.75}),`+
+      `0 0 ${22+b*62}px rgba(150,0,255,${b*.60}),`+
+      `0 0 ${38+b*82}px rgba(0,255,90,${b*.30})`;
   } else {
     logoText.style.textShadow='';
   }
 
-  // hihat strobe
-  if(smoothHihat>0.035){
+  // ── HIHAT STROBE — very aggressive ───────────────────────────
+  if(smoothHihat>0.028){ // lower threshold = triggers more often
     strobeState=!strobeState;
-    if(strobeState&&Math.random()<smoothHihat*2.0){
+    // higher prob = more flicker frames
+    if(strobeState&&Math.random()<smoothHihat*2.5){
       logoText.classList.add('strobe-on');
     } else {
       logoText.classList.remove('strobe-on');
     }
-    if(Math.random()<smoothHihat) setGlitchCSS(smoothHihat*.8+glitchOffset*.5);
+    // regen glitch slices on almost every hihat tick
+    if(Math.random()<smoothHihat*1.2){
+      setGlitchCSS(smoothHihat*.9+glitchOffset*.6);
+    }
   } else {
+    // even without hihats, random micro-glitch at low intensity
+    if(Math.random()<0.015) setGlitchCSS(0.15+bass*.3);
     logoText.classList.remove('strobe-on');
     strobeState=false;
   }
 
-  // bass hit glitch slam
+  // ── BASS HIT: hard glitch slam ────────────────────────────────
   if(bigHit){
-    setGlitchCSS(bass*1.4);
+    setGlitchCSS(bass*1.6); // bigger intensity multiplier
     logoText.classList.add('beat-hit');
-    glitchTimer=7+Math.floor(bass*7);
+    glitchTimer=8+Math.floor(bass*8); // holds longer
   }
   if(glitchTimer>0){
     glitchTimer--;
-    if(glitchTimer>0&&glitchTimer%2===0) setGlitchCSS(bass*.9+glitchOffset*.4);
+    // regen every frame while held — constant motion
+    if(glitchTimer>0) setGlitchCSS(bass*1.0+glitchOffset*.5);
     if(glitchTimer===0) logoText.classList.remove('beat-hit');
   }
 }
