@@ -359,61 +359,60 @@ function drawParticles(bass){
   }
 }
 
-// ── LIGHTNING — BIG, SLOW DECAY ───────────────────────────────
+// ── LIGHTNING — sparse, bass-hit only, lightweight ────────────
 const logoEl=document.getElementById('logoBox');
 let logoCenter={x:innerWidth/2, y:innerHeight/2};
 function updateLogoBox(){
   const r=logoEl.getBoundingClientRect();
   logoCenter={x:r.left+r.width/2, y:r.top+r.height/2};
-  boxRect = r;
+  boxRect=r;
 }
 setTimeout(updateLogoBox,200);
 
-function lightningSegment(ctx,x1,y1,x2,y2,rough,depth){
-  if(depth<=0||rough<1){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();return;}
-  const mx=(x1+x2)/2+(Math.random()-.5)*rough, my=(y1+y2)/2+(Math.random()-.5)*rough;
-  lightningSegment(ctx,x1,y1,mx,my,rough*.55,depth-1);
-  lightningSegment(ctx,mx,my,x2,y2,rough*.55,depth-1);
-  if(Math.random()<.45&&depth>1){
-    const ba=Math.atan2(y2-y1,x2-x1)+(Math.random()-.5)*1.5, saved=ctx.globalAlpha;
-    ctx.globalAlpha=saved*.5;
-    lightningSegment(ctx,mx,my,mx+Math.cos(ba)*rough*.9,my+Math.sin(ba)*rough*.9,rough*.5,depth-2);
-    ctx.globalAlpha=saved;
+// Simple iterative bolt — no recursion = no lag
+function drawBolt(ctx, x1,y1,x2,y2, segs, rough){
+  let pts=[{x:x1,y:y1},{x:x2,y:y2}];
+  for(let s=0;s<segs;s++){
+    const next=[];
+    for(let i=0;i<pts.length-1;i++){
+      next.push(pts[i]);
+      next.push({
+        x:(pts[i].x+pts[i+1].x)/2+(Math.random()-.5)*rough,
+        y:(pts[i].y+pts[i+1].y)/2+(Math.random()-.5)*rough,
+      });
+    }
+    next.push(pts[pts.length-1]);
+    pts=next; rough*=.55;
   }
+  ctx.beginPath();
+  pts.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));
+  ctx.stroke();
 }
 
 let bolts=[];
 const BOLT_HUES=[180,285,55,320,120];
-let prevSmoothBass = 0;
+let prevSmoothBass=0;
+let boltCooldown=0;
 
 function spawnBolts(bass){
   if(!audioReady) return;
-  // detect transient — spawn on rising edge
-  const transient = bass - prevSmoothBass;
-  const isBigHit = bass > 0.25 && transient > 0.04;
-  if(!isBigHit && bass < 0.15) return;
-
-  const count = isBigHit
-    ? 3 + Math.floor(bass * 14)   // big burst on hit
-    : Math.floor(bass * 4);       // trickle between beats
-
+  boltCooldown=Math.max(0,boltCooldown-1);
+  const transient=bass-prevSmoothBass;
+  // only on a genuine bass hit, with cooldown so we don't flood
+  if(bass<0.28 || transient<0.05 || boltCooldown>0) return;
+  boltCooldown=8; // ~8 frames before next spawn
+  // just 2-3 bolts max
+  const count=2+Math.floor(bass*1.5);
   for(let i=0;i<count;i++){
     const angle=Math.random()*Math.PI*2;
-    // long bolts — reach across most of the screen
-    const len = isBigHit
-      ? Math.max(W,H)*.4 + Math.random()*Math.max(W,H)*.55
-      : 80 + Math.random()*Math.max(W,H)*.35;
+    const len=Math.max(W,H)*.25 + Math.random()*Math.max(W,H)*.35;
     bolts.push({
       x1:logoCenter.x, y1:logoCenter.y,
       x2:logoCenter.x+Math.cos(angle)*len,
       y2:logoCenter.y+Math.sin(angle)*len,
-      life:1,
-      // SLOW decay — linger visibly
-      decay: isBigHit ? .018+Math.random()*.022 : .04+Math.random()*.06,
+      life:1, decay:.035+Math.random()*.025,
       hue:BOLT_HUES[Math.floor(Math.random()*BOLT_HUES.length)],
-      roughness: isBigHit ? 60+Math.random()*120 : 30+Math.random()*60,
-      depth: isBigHit ? 6 + Math.floor(bass*3) : 4,
-      thick: isBigHit,
+      rough:50+Math.random()*60,
     });
   }
 }
@@ -421,168 +420,230 @@ function spawnBolts(bass){
 function drawLightning(bass){
   lctx.clearRect(0,0,W,H);
   spawnBolts(bass);
-  bolts=bolts.filter(b=>b.life>0.005);
+  bolts=bolts.filter(b=>b.life>0.01);
   bolts.forEach(b=>{
     b.life-=b.decay; if(b.life<=0)return;
-    const a=Math.max(0,b.life);
+    const a=b.life;
     lctx.globalAlpha=a;
-
-    if(b.thick){
-      // outer fat glow
-      lctx.shadowBlur=30+bass*40; lctx.shadowColor=hsl(b.hue,100,70);
-      lctx.strokeStyle=hsl(b.hue,100,75,a*.7); lctx.lineWidth=3;
-      lightningSegment(lctx,b.x1,b.y1,b.x2,b.y2,b.roughness,b.depth);
-      // mid
-      lctx.shadowBlur=12; lctx.lineWidth=1.5;
-      lctx.strokeStyle=hsl(b.hue,100,90,a*.8);
-      lightningSegment(lctx,b.x1,b.y1,b.x2,b.y2,b.roughness*.6,b.depth-1);
-    } else {
-      lctx.shadowBlur=14+bass*16; lctx.shadowColor=hsl(b.hue,100,70);
-      lctx.strokeStyle=hsl(b.hue,100,80,a*.6); lctx.lineWidth=1.5;
-      lightningSegment(lctx,b.x1,b.y1,b.x2,b.y2,b.roughness,b.depth);
-    }
-    // white core on all bolts
-    lctx.shadowBlur=4; lctx.strokeStyle=`rgba(255,255,255,${a*.9})`; lctx.lineWidth=.6;
-    lightningSegment(lctx,b.x1,b.y1,b.x2,b.y2,b.roughness*.35,Math.max(2,b.depth-2));
-    lctx.globalAlpha=1; lctx.shadowBlur=0;
+    // glow pass
+    lctx.shadowBlur=20; lctx.shadowColor=hsl(b.hue,100,70);
+    lctx.strokeStyle=hsl(b.hue,100,80,a*.7); lctx.lineWidth=1.5;
+    drawBolt(lctx,b.x1,b.y1,b.x2,b.y2,4,b.rough);
+    // white core
+    lctx.shadowBlur=0; lctx.strokeStyle=`rgba(255,255,255,${a*.8})`; lctx.lineWidth=.5;
+    drawBolt(lctx,b.x1,b.y1,b.x2,b.y2,3,b.rough*.4);
+    lctx.globalAlpha=1;
   });
-
-  // Radial burst at logo center on big bass
-  if(bass>.28){
-    const burst=lctx.createRadialGradient(logoCenter.x,logoCenter.y,0,logoCenter.x,logoCenter.y,180*bass);
-    burst.addColorStop(0,`rgba(255,255,255,${Math.min(bass*.7,.5)})`);
-    burst.addColorStop(.25,`rgba(0,255,255,${bass*.35})`);
-    burst.addColorStop(.6,`rgba(255,0,255,${bass*.15})`);
-    burst.addColorStop(1,'rgba(0,0,0,0)');
-    lctx.fillStyle=burst;
-    lctx.beginPath(); lctx.arc(logoCenter.x,logoCenter.y,180*bass,0,Math.PI*2); lctx.fill();
+  // small radial burst on hit
+  if(bass>.3){
+    const g=lctx.createRadialGradient(logoCenter.x,logoCenter.y,0,logoCenter.x,logoCenter.y,100*bass);
+    g.addColorStop(0,`rgba(255,255,255,${bass*.35})`);
+    g.addColorStop(.4,`rgba(0,255,255,${bass*.2})`);
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    lctx.fillStyle=g;
+    lctx.beginPath(); lctx.arc(logoCenter.x,logoCenter.y,100*bass,0,Math.PI*2); lctx.fill();
   }
 }
 
-// ── AUDIO SPECTRUM WAVEFORM (top + bottom of logo box) ────────
-const WAVE_PTS = 128;
-let waveSmooth    = new Float32Array(WAVE_PTS);
-let waveSmoothBot = new Float32Array(WAVE_PTS);
+// ── AUDIO SPECTRUM WAVEFORM ───────────────────────────────────
+// 3 waves on each edge: 1 big bass-reactive + 2 smaller satellites
+// TOP: emanates from left side of box
+// BOTTOM: reversed, emanates from right side of box
+
+const WAVE_PTS = 80; // enough resolution, not too heavy
+// Each wave has its own smoothing array
+const waveData = [
+  { smooth: new Float32Array(WAVE_PTS), binStart:0,   binEnd:0.12, amp:1.0,  speed:0.68 }, // BIG — sub/bass
+  { smooth: new Float32Array(WAVE_PTS), binStart:0.08, binEnd:0.25, amp:0.45, speed:0.72 }, // mid-bass
+  { smooth: new Float32Array(WAVE_PTS), binStart:0.18, binEnd:0.40, amp:0.28, speed:0.75 }, // low-mid
+];
 let specHue = 0;
+
+function updateWaveData(){
+  if(!audioReady) return;
+  const specEnd = Math.floor(bufferLength * 0.65);
+  waveData.forEach(w=>{
+    const b0=Math.floor(w.binStart*specEnd), b1=Math.floor(w.binEnd*specEnd);
+    const span=Math.max(1,b1-b0);
+    for(let i=0;i<WAVE_PTS;i++){
+      const bin=b0+Math.floor((i/WAVE_PTS)*span);
+      const raw=(freqData[bin]||0)/255;
+      w.smooth[i]=w.smooth[i]*w.speed + raw*(1-w.speed);
+    }
+  });
+}
 
 function drawSpectrumBorder(bass){
   sctx.clearRect(0,0,W,H);
+  if(!boxRect) return;
 
-  const bx = boxRect ? boxRect.left   : cx - 200;
-  const by = boxRect ? boxRect.top    : cy - 60;
-  const bw = boxRect ? boxRect.width  : 400;
-  const bh = boxRect ? boxRect.height : 120;
+  updateWaveData();
 
-  specHue = (specHue + 0.5 + bass * 2.0) % 360;
+  const bx=boxRect.left, by=boxRect.top;
+  const bw=boxRect.width, bh=boxRect.height;
 
-  const maxAmp  = 40 + bass * 70;
-  const specEnd = audioReady ? Math.floor(bufferLength * 0.6) : 0;
+  specHue=(specHue+0.4+bass*1.8)%360;
 
-  // smooth top wave: low→high freq left→right
-  for(let i=0;i<WAVE_PTS;i++){
-    const raw = audioReady ? (freqData[Math.floor((i/WAVE_PTS)*specEnd)]||0)/255 : 0;
-    waveSmooth[i] = waveSmooth[i]*0.68 + raw*0.32;
-  }
-  // smooth bottom wave: reversed (high→low left→right)
-  for(let i=0;i<WAVE_PTS;i++){
-    const raw = audioReady ? (freqData[Math.floor(((WAVE_PTS-1-i)/WAVE_PTS)*specEnd)]||0)/255 : 0;
-    waveSmoothBot[i] = waveSmoothBot[i]*0.68 + raw*0.32;
-  }
+  // maxAmp scales with bass — big reactive on drops
+  const maxAmp = 30 + bass * 90;
 
-  function drawWave(arr, edgeY, dir /* -1=up +1=down */, hueBase){
-    const tipGrad = sctx.createLinearGradient(0, edgeY, 0, edgeY + dir*maxAmp);
-    tipGrad.addColorStop(0, hsl(hueBase,100,60,0.08));
-    tipGrad.addColorStop(1, hsl((hueBase+80)%360,100,78,0.85));
+  // Draw one wave layer
+  // xStart/xEnd: horizontal span (fraction of bw, 0=left 1=right)
+  // edgeY: y of the box edge it anchors to
+  // dir: -1 up, +1 down
+  // ampScale: relative size
+  // hue, alpha
+  function drawWaveLayer(smoothArr, xStart, xEnd, edgeY, dir, ampScale, hue, alpha){
+    const x0 = bx + xStart*bw;
+    const x1 = bx + xEnd*bw;
+    const pts = WAVE_PTS;
 
-    // filled area
+    // filled glow area
+    const grad = sctx.createLinearGradient(0, edgeY, 0, edgeY + dir*maxAmp*ampScale);
+    grad.addColorStop(0,   hsl(hue,100,60, alpha*0.05));
+    grad.addColorStop(0.6, hsl((hue+50)%360,100,65, alpha*0.4));
+    grad.addColorStop(1,   hsl((hue+90)%360,100,80, alpha*0.85));
+
     sctx.save();
+    sctx.shadowBlur  = 14 + bass*22;
+    sctx.shadowColor = hsl(hue,100,70);
+
+    // filled shape
     sctx.beginPath();
-    sctx.moveTo(bx, edgeY);
-    for(let i=0;i<WAVE_PTS;i++){
-      const px = bx + (i/(WAVE_PTS-1))*bw;
-      const py = edgeY + dir * arr[i] * maxAmp;
+    sctx.moveTo(x0, edgeY);
+    for(let i=0;i<pts;i++){
+      const t  = i/(pts-1);
+      const px = x0 + t*(x1-x0);
+      const py = edgeY + dir * smoothArr[i] * maxAmp * ampScale;
       sctx.lineTo(px, py);
     }
-    sctx.lineTo(bx+bw, edgeY);
+    sctx.lineTo(x1, edgeY);
     sctx.closePath();
-    sctx.fillStyle = tipGrad;
+    sctx.fillStyle = grad;
     sctx.fill();
 
-    // glowing stroke line
-    sctx.shadowBlur  = 12 + bass*20;
-    sctx.shadowColor = hsl(hueBase, 100, 70);
-    sctx.strokeStyle = hsl((hueBase+60)%360, 100, 82, 0.9);
-    sctx.lineWidth   = 2;
+    // glowing ridge line
+    sctx.strokeStyle = hsl((hue+60)%360, 100, 85, alpha*0.9);
+    sctx.lineWidth   = ampScale > 0.7 ? 2 : 1;
     sctx.beginPath();
-    sctx.moveTo(bx, edgeY + dir * arr[0] * maxAmp);
-    for(let i=1;i<WAVE_PTS;i++){
-      const px = bx + (i/(WAVE_PTS-1))*bw;
-      const py = edgeY + dir * arr[i] * maxAmp;
-      sctx.lineTo(px, py);
+    for(let i=0;i<pts;i++){
+      const t  = i/(pts-1);
+      const px = x0 + t*(x1-x0);
+      const py = edgeY + dir * smoothArr[i] * maxAmp * ampScale;
+      i===0 ? sctx.moveTo(px,py) : sctx.lineTo(px,py);
     }
     sctx.stroke();
 
-    // bright white highlight on the ridge
-    sctx.shadowBlur  = 4;
-    sctx.strokeStyle = `rgba(255,255,255,${0.3+bass*0.55})`;
-    sctx.lineWidth   = 1;
+    // white core
+    sctx.shadowBlur  = 3;
+    sctx.strokeStyle = `rgba(255,255,255,${alpha*(0.3+bass*0.5)})`;
+    sctx.lineWidth   = 0.8;
     sctx.beginPath();
-    sctx.moveTo(bx, edgeY + dir * arr[0] * maxAmp);
-    for(let i=1;i<WAVE_PTS;i++){
-      const px = bx + (i/(WAVE_PTS-1))*bw;
-      const py = edgeY + dir * arr[i] * maxAmp;
-      sctx.lineTo(px, py);
+    for(let i=0;i<pts;i++){
+      const t  = i/(pts-1);
+      const px = x0 + t*(x1-x0);
+      const py = edgeY + dir * smoothArr[i] * maxAmp * ampScale;
+      i===0 ? sctx.moveTo(px,py) : sctx.lineTo(px,py);
     }
     sctx.stroke();
     sctx.restore();
   }
 
-  // TOP grows upward from top edge
-  drawWave(waveSmooth,    by,      -1, specHue);
-  // BOTTOM grows downward, reversed spectrum
-  drawWave(waveSmoothBot, by + bh,  1, (specHue + 150) % 360);
+  // ── TOP — 3 waves anchored LEFT, growing upward ───────────
+  // Big main wave: spans left ~65% of box
+  drawWaveLayer(waveData[0].smooth, 0, 0.65, by, -1, 1.0,  specHue,         0.9);
+  // Mid wave: spans left ~45%
+  drawWaveLayer(waveData[1].smooth, 0, 0.45, by, -1, 0.55, (specHue+60)%360, 0.65);
+  // Small wave: spans left ~28%
+  drawWaveLayer(waveData[2].smooth, 0, 0.28, by, -1, 0.35, (specHue+120)%360,0.45);
+
+  // ── BOTTOM — 3 waves anchored RIGHT, growing downward ────
+  // Reverse the arrays so energy is on the right side
+  const revMain = waveData[0].smooth.slice().reverse();
+  const revMid  = waveData[1].smooth.slice().reverse();
+  const revSmall= waveData[2].smooth.slice().reverse();
+  const bHue = (specHue+160)%360;
+  drawWaveLayer(revMain,  0.35, 1.0, by+bh, 1, 1.0,  bHue,           0.9);
+  drawWaveLayer(revMid,   0.55, 1.0, by+bh, 1, 0.55, (bHue+60)%360,  0.65);
+  drawWaveLayer(revSmall, 0.72, 1.0, by+bh, 1, 0.35, (bHue+120)%360, 0.45);
 
   // Static side lines
   sctx.save();
-  sctx.strokeStyle = 'rgba(255,255,255,0.15)';
-  sctx.lineWidth = 1;
+  sctx.strokeStyle='rgba(255,255,255,0.12)';
+  sctx.lineWidth=1;
   sctx.beginPath(); sctx.moveTo(bx,    by); sctx.lineTo(bx,    by+bh); sctx.stroke();
   sctx.beginPath(); sctx.moveTo(bx+bw, by); sctx.lineTo(bx+bw, by+bh); sctx.stroke();
   sctx.restore();
 }
 
-// ── LOGO GLITCH — JS-DRIVEN BEAT GLITCH ──────────────────────
-const logoText  = document.getElementById('logoText');
-const glitchEl  = logoText; // .glitch div
+// ── HIHAT ENERGY ─────────────────────────────────────────────
+function getHihatEnergy(){
+  if(!audioReady) return 0;
+  // hihat lives ~6kHz-14kHz
+  const binHz = (audioCtx.sampleRate/2)/bufferLength;
+  const lo=Math.floor(6000/binHz), hi=Math.floor(14000/binHz);
+  let sum=0;
+  for(let i=lo;i<=hi&&i<bufferLength;i++) sum+=freqData[i];
+  return sum/((hi-lo+1)*255);
+}
+
+// ── LOGO GLITCH + HIHAT STROBE ────────────────────────────────
+const logoText = document.getElementById('logoText');
 let glitchTimer = 0;
+let strobeState = false;
+let smoothHihat = 0;
+
+// CSS for beat-hit class injected once
+(()=>{
+  const s=document.createElement('style');
+  s.textContent=`
+    .beat-hit::before { animation:none !important; transform:translate(${Math.random()*14-7}px, 0) skewX(${Math.random()*10-5}deg) !important; }
+    .beat-hit::after  { animation:none !important; transform:translate(${Math.random()*-14+7}px, 0) skewX(${Math.random()*-8+4}deg) !important; }
+    .strobe-on { opacity:0 !important; }
+  `;
+  document.head.appendChild(s);
+})();
 
 function animateLogo(bass){
-  // scale pulse on beat
-  const s = 1 + bass * 0.12;
-  glitchEl.style.transform = `scale(${s}, ${1 + bass * 0.06})`;
+  const hihat = getHihatEnergy();
+  smoothHihat = smoothHihat*0.6 + hihat*0.4;
 
-  // dynamic text-shadow glow
-  glitchEl.style.textShadow = bass > 0.2
-    ? `0 0 ${10+bass*60}px rgba(255,255,255,${bass*.95}),`+
-      `0 0 ${40+bass*90}px rgba(0,255,255,${bass*.7}),`+
-      `0 0 ${70+bass*120}px rgba(255,0,255,${bass*.4})`
+  // ── scale pulse on bass ───────────────────────────────────
+  const s = 1 + bass*0.12;
+  logoText.style.transform = `scale(${s},${1+bass*0.06})`;
+
+  // ── glow on bass ─────────────────────────────────────────
+  logoText.style.textShadow = bass > 0.18
+    ? `0 0 ${8+bass*55}px rgba(255,255,255,${bass*.9}),`+
+      `0 0 ${30+bass*80}px rgba(0,255,255,${bass*.65}),`+
+      `0 0 ${60+bass*110}px rgba(255,0,255,${bass*.35})`
     : '';
 
-  // JS-driven clip-path glitch slam on bass transient
+  // ── hihat 16th-note STROBE ────────────────────────────────
+  // When hihats are active, flicker the logo visibility rapidly
+  // creating a stuttery 16th-note strobe effect
+  if(smoothHihat > 0.055){
+    // toggle strobe every ~2 frames for rapid flutter
+    strobeState = !strobeState;
+    if(strobeState && Math.random() < smoothHihat*1.4){
+      logoText.classList.add('strobe-on');
+    } else {
+      logoText.classList.remove('strobe-on');
+    }
+  } else {
+    logoText.classList.remove('strobe-on');
+    strobeState = false;
+  }
+
+  // ── bass transient: hard glitch slam ─────────────────────
   const transient = bass - prevSmoothBass;
-  if(bass > 0.3 && transient > 0.05){
-    // randomise the clip slices for a hard glitch
-    const r1 = Math.random()*100, r2 = r1 + 5+Math.random()*25;
-    const r3 = Math.random()*100, r4 = r3 + 5+Math.random()*20;
-    glitchEl.style.setProperty('--c1','#ff00ff');
-    // Slam the before/after pseudo-elements via CSS variables isn't possible,
-    // so we do it by toggling a class that overrides animation with a snap
-    glitchEl.classList.add('beat-hit');
-    glitchTimer = 3; // hold for 3 frames
+  if(bass > 0.28 && transient > 0.045){
+    logoText.classList.add('beat-hit');
+    glitchTimer = 4;
   }
   if(glitchTimer > 0){
     glitchTimer--;
-    if(glitchTimer===0) glitchEl.classList.remove('beat-hit');
+    if(glitchTimer===0) logoText.classList.remove('beat-hit');
   }
 }
 
