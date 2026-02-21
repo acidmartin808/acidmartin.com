@@ -6,409 +6,474 @@
   <title>acidmartin.com</title>
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
-    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-    :root {
-      --c1: #ff00ff; --c2: #00ffff; --c3: #ff6600; --c4: #00ff66; --c5: #6600ff;
-    }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Space Mono', monospace; }
-    #blobCanvas    { position: fixed; inset: 0; z-index: 1; opacity: 0.35; mix-blend-mode: screen; }
-    #tunnelCanvas  { position: fixed; inset: 0; z-index: 3; }
-    #particleCanvas{ position: fixed; inset: 0; z-index: 4; }
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    :root { --c1:#ff00ff; --c2:#00ffff; --c3:#ff6600; --c4:#00ff66; --c5:#6600ff; }
+    html, body { width:100%; height:100%; overflow:hidden; background:#000; font-family:'Space Mono',monospace; }
+    #blobCanvas     { position:fixed; inset:0; z-index:1; opacity:0.38; mix-blend-mode:screen; }
+    #plasmaCanvas   { position:fixed; inset:0; z-index:2; opacity:0.20; mix-blend-mode:screen; }
+    #tunnelCanvas   { position:fixed; inset:0; z-index:3; }
+    #particleCanvas { position:fixed; inset:0; z-index:4; }
+    #lightningCanvas{ position:fixed; inset:0; z-index:8; pointer-events:none; }
     body::after {
-      content: ''; position: fixed; inset: 0;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
-      background-size: 200px 200px; pointer-events: none; z-index: 5; opacity: 0.4; mix-blend-mode: overlay;
+      content:''; position:fixed; inset:0;
+      background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
+      background-size:200px 200px; pointer-events:none; z-index:5; opacity:0.4; mix-blend-mode:overlay;
     }
-    .stage { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; pointer-events: none; }
-    .glitch { font-size: clamp(3rem, 10vw, 8rem); font-weight: 700; color: #fff; letter-spacing: 0.05em; text-transform: lowercase; position: relative; animation: flicker 8s infinite; transition: transform 0.05s, text-shadow 0.05s; }
-    .glitch::before, .glitch::after { content: attr(data-text); position: absolute; inset: 0; }
-    .glitch::before { color: var(--c1); clip-path: polygon(0 20%, 100% 20%, 100% 40%, 0 40%); animation: glitch-top 3s infinite steps(2); mix-blend-mode: screen; }
-    .glitch::after  { color: var(--c2); clip-path: polygon(0 60%, 100% 60%, 100% 80%, 0 80%); animation: glitch-bot 2.5s infinite steps(2); mix-blend-mode: screen; }
-    .sub { margin-top: 1.5rem; font-size: clamp(0.7rem, 2vw, 1rem); letter-spacing: 0.4em; text-transform: uppercase; color: rgba(255,255,255,0.5); animation: pulse-sub 4s ease-in-out infinite; }
-    .sub::before { content: '▶ '; color: var(--c3); animation: blink 1s step-end infinite; }
-    .scanline { position: fixed; inset: 0; background: repeating-linear-gradient(to bottom, transparent 0px, transparent 3px, rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 4px); pointer-events: none; z-index: 6; }
-    .vignette  { position: fixed; inset: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.85) 100%); pointer-events: none; z-index: 7; }
-    .rgb-border { position: relative; padding: 2rem 4rem; border: 1px solid rgba(255,255,255,0.08); animation: border-pulse 4s ease-in-out infinite; }
-    .rgb-border::before { content: ''; position: absolute; inset: -2px; background: linear-gradient(90deg, var(--c1), var(--c2), var(--c3), var(--c4), var(--c5), var(--c1)); background-size: 300% 100%; border-radius: 2px; z-index: -1; animation: rainbow-border 3s linear infinite; opacity: 0.6; }
-    .rgb-border::after  { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,0.92); z-index: -1; }
-
-    /* Mute button */
-    #muteBtn {
-      position: fixed; bottom: 24px; right: 24px; z-index: 999;
-      width: 40px; height: 40px;
-      background: rgba(0,0,0,0.6);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 50%;
-      cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      color: rgba(255,255,255,0.6);
-      font-size: 16px;
-      transition: border-color 0.3s, color 0.3s, box-shadow 0.3s;
-      backdrop-filter: blur(8px);
-      font-family: inherit;
+    .stage { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; pointer-events:none; }
+    .glitch {
+      font-size:clamp(3rem,10vw,8rem); font-weight:700; color:#fff;
+      letter-spacing:0.05em; word-spacing:0.35em;
+      position:relative; animation:flicker 4s infinite;
+      transition:transform 0.02s, text-shadow 0.02s; will-change:transform;
     }
-    #muteBtn:hover {
-      border-color: rgba(0,255,255,0.5);
-      color: #fff;
-      box-shadow: 0 0 12px rgba(0,255,255,0.3);
-    }
-
-    /* Audio start overlay */
-    #startOverlay {
-      position: fixed; inset: 0; z-index: 9999;
-      display: flex; align-items: center; justify-content: center;
-      background: rgba(0,0,0,0.9);
-      cursor: pointer;
-      flex-direction: column; gap: 1.2rem;
-    }
-    #startOverlay span {
-      font-family: 'Space Mono', monospace;
-      font-size: clamp(0.7rem, 1.5vw, 0.9rem);
-      letter-spacing: 0.35em;
-      text-transform: uppercase;
-      color: rgba(255,255,255,0.35);
-    }
-    #startOverlay .pulse-ring {
-      width: 80px; height: 80px;
-      border: 2px solid rgba(0,255,255,0.6);
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      color: rgba(0,255,255,0.8);
-      font-size: 28px;
-      animation: ring-pulse 2s ease-in-out infinite;
-    }
-    @keyframes ring-pulse {
-      0%,100%{ box-shadow: 0 0 0 0 rgba(0,255,255,0.3); }
-      50%{ box-shadow: 0 0 0 20px rgba(0,255,255,0); }
-    }
-    @keyframes glitch-top { 0%{transform:translate(-3px,0)} 25%{transform:translate(3px,0)} 50%{transform:translate(-1px,0) skewX(5deg)} 75%{transform:translate(2px,0)} 100%{transform:translate(-3px,0)} }
-    @keyframes glitch-bot { 0%{transform:translate(3px,0)} 33%{transform:translate(-3px,0) skewX(-3deg)} 66%{transform:translate(1px,0)} 100%{transform:translate(3px,0)} }
-    @keyframes flicker { 0%,95%,100%{opacity:1} 96%{opacity:.4} 97%{opacity:1} 98%{opacity:.2} 99%{opacity:1} }
-    @keyframes pulse-sub { 0%,100%{opacity:.5} 50%{opacity:1;color:rgba(255,255,255,.9);letter-spacing:.5em} }
+    .glitch::before,.glitch::after { content:attr(data-text); position:absolute; inset:0; }
+    .glitch::before { color:var(--c1); clip-path:polygon(0 15%,100% 15%,100% 45%,0 45%); animation:glitch-top 1.6s infinite steps(3); mix-blend-mode:screen; }
+    .glitch::after  { color:var(--c2); clip-path:polygon(0 55%,100% 55%,100% 85%,0 85%); animation:glitch-bot 1.2s infinite steps(3); mix-blend-mode:screen; }
+    .glitch-extra { position:absolute; inset:0; color:var(--c4); clip-path:polygon(0 0,100% 0,100% 18%,0 18%); animation:glitch-extra 2s infinite steps(4); mix-blend-mode:screen; pointer-events:none; }
+    .sub { margin-top:1.5rem; font-size:clamp(0.7rem,2vw,1rem); letter-spacing:0.4em; text-transform:uppercase; color:rgba(255,255,255,0.5); animation:pulse-sub 4s ease-in-out infinite; }
+    .sub::before { content:'\25b6 '; color:var(--c3); animation:blink 1s step-end infinite; }
+    .scanline { position:fixed; inset:0; background:repeating-linear-gradient(to bottom,transparent 0px,transparent 3px,rgba(0,0,0,0.08) 3px,rgba(0,0,0,0.08) 4px); pointer-events:none; z-index:6; }
+    .vignette  { position:fixed; inset:0; background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,0.85) 100%); pointer-events:none; z-index:7; }
+    .rgb-border { position:relative; padding:2rem 4rem; border:1px solid rgba(255,255,255,0.12); }
+    .rgb-border::after { content:''; position:absolute; inset:0; background:rgba(0,0,0,0.82); z-index:-1; }
+    #muteBtn { position:fixed; bottom:24px; right:24px; z-index:999; width:40px; height:40px; background:rgba(0,0,0,0.6); border:1px solid rgba(255,255,255,0.15); border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.6); font-size:16px; font-family:inherit; backdrop-filter:blur(8px); }
+    #muteBtn:hover { border-color:rgba(0,255,255,0.5); color:#fff; box-shadow:0 0 12px rgba(0,255,255,0.3); }
+    #startOverlay { position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.9); cursor:pointer; flex-direction:column; gap:1.2rem; }
+    #startOverlay span { font-family:'Space Mono',monospace; font-size:clamp(0.7rem,1.5vw,0.9rem); letter-spacing:0.35em; text-transform:uppercase; color:rgba(255,255,255,0.35); }
+    #startOverlay .pulse-ring { width:80px; height:80px; border:2px solid rgba(0,255,255,0.6); border-radius:50%; display:flex; align-items:center; justify-content:center; color:rgba(0,255,255,0.8); font-size:28px; animation:ring-pulse 2s ease-in-out infinite; }
+    @keyframes ring-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(0,255,255,0.3)} 50%{box-shadow:0 0 0 20px rgba(0,255,255,0)} }
+    @keyframes glitch-top { 0%{transform:translate(-7px,0) skewX(0deg)} 20%{transform:translate(7px,0) skewX(-5deg)} 40%{transform:translate(-3px,0) skewX(3deg)} 60%{transform:translate(10px,-2px) skewX(-2deg)} 80%{transform:translate(-5px,0) skewX(4deg)} 100%{transform:translate(-7px,0)} }
+    @keyframes glitch-bot { 0%{transform:translate(7px,0)} 25%{transform:translate(-9px,0) skewX(4deg)} 50%{transform:translate(4px,2px) skewX(-3deg)} 75%{transform:translate(-3px,0) skewX(2deg)} 100%{transform:translate(7px,0)} }
+    @keyframes glitch-extra { 0%{transform:translate(0,0);opacity:.8} 15%{transform:translate(-12px,0);clip-path:polygon(0 0,100% 0,100% 25%,0 25%);opacity:1} 30%{transform:translate(12px,0);clip-path:polygon(0 70%,100% 70%,100% 100%,0 100%);opacity:.7} 50%{transform:translate(-5px,3px);opacity:0} 70%{transform:translate(6px,0);clip-path:polygon(0 40%,100% 40%,100% 60%,0 60%);opacity:.9} 100%{transform:translate(0,0);opacity:0} }
+    @keyframes flicker { 0%,88%,100%{opacity:1} 89%{opacity:.15} 90%{opacity:1} 92%{opacity:.04} 93%{opacity:1} 95%{opacity:.35} 96%{opacity:1} 98%{opacity:.1} 99%{opacity:1} }
+    @keyframes pulse-sub { 0%,100%{opacity:.5} 50%{opacity:1;letter-spacing:.5em} }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-    @keyframes rainbow-border { 0%{background-position:0% 50%} 100%{background-position:300% 50%} }
-    @keyframes border-pulse { 0%,100%{box-shadow:0 0 0 transparent} 50%{box-shadow:0 0 30px rgba(255,0,255,.15),0 0 60px rgba(0,255,255,.1)} }
+    .strobe-on { opacity:0 !important; }
   </style>
 </head>
 <body>
-
-<!-- Click to start overlay (browser autoplay policy requires user gesture) -->
 <div id="startOverlay">
-  <div class="pulse-ring">▶</div>
+  <div class="pulse-ring">&#9654;</div>
   <span>click to enter</span>
 </div>
-
-<!--
-  ★ TO ADD YOUR SONG:
-    1. Upload your audio file to the same GitHub repo folder as index.html
-    2. Rename it to "song.mp3" (or update the src below to match your filename)
-    3. Commit and push — GitHub Pages will serve it automatically
--->
 <audio id="bgAudio" loop>
-  <source src="MOOD SWINGS fuckery.wav" type="audio/wav">
+  <source src="song" type="audio/wav">
+  <source src="song.wav" type="audio/wav">
+  <source src="song.mp3" type="audio/mpeg">
 </audio>
-
 <canvas id="blobCanvas"></canvas>
+<canvas id="plasmaCanvas"></canvas>
 <canvas id="tunnelCanvas"></canvas>
 <canvas id="particleCanvas"></canvas>
+<canvas id="lightningCanvas"></canvas>
 <div class="scanline"></div>
 <div class="vignette"></div>
 <div class="stage">
   <div class="rgb-border" id="logoBox">
-    <div class="glitch" data-text="acidmartin" id="logoText">acidmartin</div>
+    <div class="glitch" data-text="Acid Martin" id="logoText">
+      Acid Martin
+      <span class="glitch-extra" aria-hidden="true">Acid Martin</span>
+    </div>
     <div class="sub">something is coming</div>
   </div>
 </div>
-
-<button id="muteBtn" title="Toggle sound">🔊</button>
-
+<button id="muteBtn" title="Toggle sound">&#128266;</button>
 <script>
-  // ─────────────────────────────────────────
-  //  AUDIO + WEB AUDIO API SETUP
-  // ─────────────────────────────────────────
-  const audio = document.getElementById('bgAudio');
-  const muteBtn = document.getElementById('muteBtn');
-  const startOverlay = document.getElementById('startOverlay');
+function hsl(h,s,l,a=1){return `hsla(${h},${s}%,${l}%,${a})`;}
 
-  let audioCtx, analyser, dataArray, bufferLength;
-  let audioReady = false;
-  let smoothBass = 0;
+// ── AUDIO ──────────────────────────────────────────────────────
+const audio=document.getElementById('bgAudio');
+const muteBtn=document.getElementById('muteBtn');
+const startOverlay=document.getElementById('startOverlay');
+let audioCtx,analyser,freqData,bufferLength;
+let audioReady=false,smoothBass=0,prevSmoothBass=0;
 
-  function initAudio() {
-    if (audioReady) return;
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioCtx.createMediaElementSource(audio);
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.82;
-    bufferLength = analyser.frequencyBinCount;
-    dataArray = new Uint8Array(bufferLength);
-    source.connect(analyser);
-    analyser.connect(audioCtx.destination);
-    audioReady = true;
+function initAudio(){
+  if(audioReady)return;
+  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  const src=audioCtx.createMediaElementSource(audio);
+  analyser=audioCtx.createAnalyser();
+  analyser.fftSize=2048; analyser.smoothingTimeConstant=0.70;
+  bufferLength=analyser.frequencyBinCount;
+  freqData=new Uint8Array(bufferLength);
+  src.connect(analyser); analyser.connect(audioCtx.destination);
+  audioReady=true;
+}
+startOverlay.addEventListener('click',()=>{
+  initAudio(); audio.play().catch(e=>console.warn(e));
+  startOverlay.style.transition='opacity 0.8s'; startOverlay.style.opacity='0';
+  setTimeout(()=>startOverlay.style.display='none',800);
+});
+muteBtn.addEventListener('click',()=>{
+  audio.muted=!audio.muted;
+  muteBtn.innerHTML=audio.muted?'&#128263;':'&#128266;';
+});
+
+function getBassEnergy(){
+  if(!audioReady)return 0;
+  analyser.getByteFrequencyData(freqData);
+  const binHz=(audioCtx.sampleRate/2)/bufferLength;
+  const bassEnd=Math.floor(250/binHz);
+  let sum=0; for(let i=1;i<=bassEnd;i++)sum+=freqData[i];
+  return sum/(bassEnd*255);
+}
+function getHihatEnergy(){
+  if(!audioReady)return 0;
+  const binHz=(audioCtx.sampleRate/2)/bufferLength;
+  const lo=Math.floor(6000/binHz),hi=Math.floor(14000/binHz);
+  let sum=0; for(let i=lo;i<=hi&&i<bufferLength;i++)sum+=freqData[i];
+  return sum/((hi-lo+1)*255);
+}
+
+// ── CANVAS ─────────────────────────────────────────────────────
+let W,H,cx,cy;
+const mouse={x:-9999,y:-9999};
+const blobCanvas=document.getElementById('blobCanvas');
+const plasmaCanvas=document.getElementById('plasmaCanvas');
+const tunnelCanvas=document.getElementById('tunnelCanvas');
+const particleCanvas=document.getElementById('particleCanvas');
+const lightningCanvas=document.getElementById('lightningCanvas');
+const bctx=blobCanvas.getContext('2d');
+const plctx=plasmaCanvas.getContext('2d');
+const tctx=tunnelCanvas.getContext('2d');
+const pctx=particleCanvas.getContext('2d');
+const lctx=lightningCanvas.getContext('2d');
+let plasmaOff,plasmaOffCtx,boxRect=null;
+
+function resize(){
+  W=window.innerWidth;H=window.innerHeight;cx=W/2;cy=H/2;
+  [blobCanvas,plasmaCanvas,tunnelCanvas,particleCanvas,lightningCanvas].forEach(c=>{c.width=W;c.height=H;});
+  plasmaOff=document.createElement('canvas');
+  plasmaOff.width=Math.floor(W/3);plasmaOff.height=Math.floor(H/3);
+  plasmaOffCtx=plasmaOff.getContext('2d');
+  updateLogoBox();
+}
+window.addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY;});
+window.addEventListener('touchmove',e=>{mouse.x=e.touches[0].clientX;mouse.y=e.touches[0].clientY;},{passive:true});
+window.addEventListener('resize',resize);
+
+// ── BLOBS — beat-reactive pop ──────────────────────────────────
+const blobs=Array.from({length:8},(_,i)=>({
+  x:Math.random()*innerWidth,y:Math.random()*innerHeight,
+  vx:(Math.random()-.5)*.5,vy:(Math.random()-.5)*.5,
+  r:120+Math.random()*180,hue:(i/8)*360,
+  phase:Math.random()*Math.PI*2,
+  morphSpeed:.003+Math.random()*.005,
+  pulseVel:0,
+}));
+function drawBlobs(bass){
+  bctx.clearRect(0,0,W,H);
+  const transient=bass-prevSmoothBass;
+  blobs.forEach(b=>{
+    if(transient>0.03) b.pulseVel+=transient*90;
+    b.pulseVel*=0.86;
+    b.x+=b.vx;b.y+=b.vy;
+    if(b.x<-b.r)b.x=W+b.r;if(b.x>W+b.r)b.x=-b.r;
+    if(b.y<-b.r)b.y=H+b.r;if(b.y>H+b.r)b.y=-b.r;
+    b.hue=(b.hue+.10)%360;
+    b.phase+=b.morphSpeed+bass*0.008;
+    const beatR=b.r+b.pulseVel;
+    const exp=1+bass*0.65;
+    bctx.beginPath();
+    for(let i=0;i<=14;i++){
+      const a=(i/14)*Math.PI*2;
+      const m=beatR*exp*(.70+.30*Math.sin(b.phase+i*1.2+Math.cos(b.phase*.8+i*.7)));
+      i===0?bctx.moveTo(b.x+Math.cos(a)*m,b.y+Math.sin(a)*m):bctx.lineTo(b.x+Math.cos(a)*m,b.y+Math.sin(a)*m);
+    }
+    bctx.closePath();
+    const g=bctx.createRadialGradient(b.x,b.y,0,b.x,b.y,beatR*exp);
+    g.addColorStop(0,hsl(b.hue,100,68,.95));
+    g.addColorStop(.45,hsl((b.hue+50)%360,100,52,.55));
+    g.addColorStop(1,hsl((b.hue+100)%360,100,40,0));
+    bctx.fillStyle=g;bctx.filter='blur(40px)';bctx.fill();bctx.filter='none';
+  });
+}
+
+// ── PLASMA — 1/3 res, smooth ───────────────────────────────────
+let pt=0;
+function drawPlasma(bass){
+  const iw=plasmaOff.width,ih=plasmaOff.height;
+  const img=plasmaOffCtx.createImageData(iw,ih);
+  const d=img.data,t=pt;
+  for(let y=0;y<ih;y++){
+    for(let x=0;x<iw;x++){
+      const nx=x/iw,ny=y/ih;
+      const v=(Math.sin(nx*8+t)+Math.sin(ny*8+t*1.3)+Math.sin((nx+ny)*6+t*.7)+Math.sin(Math.sqrt((nx-.5)**2+(ny-.5)**2)*16-t*1.5+bass*4))/4;
+      const hue=(((v+1)/2)*360+t*25)%360;
+      const h6=hue/60,c=0.5,xc=c*(1-Math.abs(h6%2-1));
+      let r=0,g=0,b=0;
+      if(h6<1){r=c;g=xc;}else if(h6<2){r=xc;g=c;}else if(h6<3){g=c;b=xc;}else if(h6<4){g=xc;b=c;}else if(h6<5){r=xc;b=c;}else{r=c;b=xc;}
+      const idx=(y*iw+x)*4;
+      d[idx]=(r+.25)*255|0;d[idx+1]=(g+.25)*255|0;d[idx+2]=(b+.25)*255|0;d[idx+3]=210;
+    }
   }
+  plasmaOffCtx.putImageData(img,0,0);
+  plctx.clearRect(0,0,W,H);plctx.filter='blur(2px)';
+  plctx.drawImage(plasmaOff,0,0,W,H);plctx.filter='none';
+  pt+=.012+bass*.04;
+}
 
-  startOverlay.addEventListener('click', () => {
-    initAudio();
-    audio.play().catch(()=>{});
-    startOverlay.style.opacity = '0';
-    startOverlay.style.transition = 'opacity 0.8s';
-    setTimeout(() => startOverlay.style.display = 'none', 800);
+// ── TUNNEL ─────────────────────────────────────────────────────
+let tt=0;
+function drawTunnel(bass){
+  tctx.clearRect(0,0,W,H);
+  const maxR=Math.sqrt(cx*cx+cy*cy)*1.2;
+  for(let i=40;i>=0;i--){
+    const p=i/40,r=maxR*p,depth=1-p,hue=(tt*30+i*15)%360;
+    tctx.beginPath();tctx.arc(cx,cy,r,0,Math.PI*2);
+    tctx.strokeStyle=hsl(hue,80,10+depth*20,.15+depth*.2+bass*.2);
+    tctx.lineWidth=1.5+bass*3;tctx.stroke();
+  }
+  for(let s=0;s<12;s++){
+    const angle=(s/12)*Math.PI*2+tt*.2+bass*.4,hue=(tt*20+s*30)%360;
+    tctx.beginPath();tctx.moveTo(cx,cy);
+    tctx.lineTo(cx+Math.cos(angle)*maxR,cy+Math.sin(angle)*maxR);
+    const g=tctx.createLinearGradient(cx,cy,cx+Math.cos(angle)*maxR,cy+Math.sin(angle)*maxR);
+    g.addColorStop(0,hsl(hue,100,60,.5+bass*.4));
+    g.addColorStop(1,hsl((hue+180)%360,100,60,0));
+    tctx.strokeStyle=g;tctx.lineWidth=1+bass*2;tctx.stroke();
+  }
+  tt+=.011;
+}
+
+// ── PARTICLES — fast tracking + beat bounce ────────────────────
+const ORBIT_N=30,BG_N=55,CDIST=130;
+const orbitParticles=Array.from({length:ORBIT_N},(_,i)=>({
+  x:Math.random()*innerWidth,y:Math.random()*innerHeight,
+  vx:0,vy:0,
+  r:2+Math.random()*2.2,hue:(i/ORBIT_N)*360,
+  orbitR:28+Math.random()*80,
+  orbitSpeed:(Math.random()>.5?1:-1)*(.032+Math.random()*.04),
+  orbitAngle:Math.random()*Math.PI*2,
+  bounceVel:0,popScale:1,
+}));
+const bgParticles=Array.from({length:BG_N},()=>({
+  x:Math.random()*innerWidth,y:Math.random()*innerHeight,
+  vx:(Math.random()-.5)*.35,vy:(Math.random()-.5)*.35,
+  r:1+Math.random()*1.5,hue:Math.random()*360,
+}));
+
+function drawParticles(bass){
+  pctx.clearRect(0,0,W,H);
+  const transient=bass-prevSmoothBass;
+  const bigHit=transient>0.04&&bass>0.20;
+
+  // bg drifters
+  bgParticles.forEach(p=>{
+    p.x+=p.vx;p.y+=p.vy;
+    if(p.x<0)p.x=W;if(p.x>W)p.x=0;if(p.y<0)p.y=H;if(p.y>H)p.y=0;
+    p.hue=(p.hue+.18)%360;
+    pctx.beginPath();pctx.arc(p.x,p.y,p.r*(1+bass*.8),0,Math.PI*2);
+    pctx.fillStyle=hsl(p.hue,100,70,.4);pctx.fill();
   });
 
-  muteBtn.addEventListener('click', () => {
-    audio.muted = !audio.muted;
-    muteBtn.textContent = audio.muted ? '🔇' : '🔊';
+  // orbit orbs — tight fast tracking, pop on beat
+  orbitParticles.forEach(p=>{
+    // beat: instant outward pop, spring back
+    if(bigHit){
+      p.bounceVel+=(Math.random()-.5)*bass*70;
+      p.popScale=1+bass*2.8;
+    }
+    p.bounceVel*=0.80;
+    p.popScale+=(1-p.popScale)*0.16;
+
+    if(mouse.x>-100){
+      p.orbitAngle+=p.orbitSpeed*(1+bass*3.5);
+      const targetR=p.orbitR+p.bounceVel;
+      const tx=mouse.x+Math.cos(p.orbitAngle)*targetR;
+      const ty=mouse.y+Math.sin(p.orbitAngle)*targetR;
+      // fast tracking: 0.06 lerp strength (was 0.018)
+      p.vx+=(tx-p.x)*0.06;
+      p.vy+=(ty-p.y)*0.06;
+    }
+    p.x+=p.vx;p.y+=p.vy;
+    // tight damping so they stay close to cursor
+    p.vx*=0.75;p.vy*=0.75;
+    if(p.x<0)p.x=W;if(p.x>W)p.x=0;if(p.y<0)p.y=H;if(p.y>H)p.y=0;
+    p.hue=(p.hue+.3)%360;
+
+    const drawR=p.r*p.popScale*(1+bass*1.4);
+    pctx.shadowBlur=10+bass*24;
+    pctx.shadowColor=hsl(p.hue,100,70);
+    pctx.beginPath();pctx.arc(p.x,p.y,drawR,0,Math.PI*2);
+    pctx.fillStyle=hsl(p.hue,100,82,.95);pctx.fill();
+    pctx.shadowBlur=0;
   });
 
-  function getBassEnergy() {
-    if (!audioReady) return 0;
-    analyser.getByteFrequencyData(dataArray);
-    // Bass: 20Hz–250Hz (sub-bass + bass region — best for visual punch)
-    const nyquist = audioCtx.sampleRate / 2;
-    const binHz = nyquist / bufferLength;
-    const bassEnd = Math.floor(250 / binHz);
-    let sum = 0;
-    for (let i = 1; i <= bassEnd; i++) sum += dataArray[i];
-    return sum / (bassEnd * 255); // normalized 0..1
-  }
-
-  // ─────────────────────────────────────────
-  //  CANVAS SETUP
-  // ─────────────────────────────────────────
-  let W, H, cx, cy;
-  const mouse = { x: -9999, y: -9999 };
-  const blobCanvas      = document.getElementById('blobCanvas');
-  const tunnelCanvas    = document.getElementById('tunnelCanvas');
-  const particleCanvas  = document.getElementById('particleCanvas');
-  const bctx  = blobCanvas.getContext('2d');
-  const tctx  = tunnelCanvas.getContext('2d');
-  const pctx  = particleCanvas.getContext('2d');
-
-  function resize() {
-    W = window.innerWidth; H = window.innerHeight; cx = W/2; cy = H/2;
-    [blobCanvas, tunnelCanvas, particleCanvas]
-      .forEach(c => { c.width = W; c.height = H; });
-  }
-  window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-  window.addEventListener('touchmove', e => { mouse.x=e.touches[0].clientX; mouse.y=e.touches[0].clientY; }, {passive:true});
-  window.addEventListener('resize', resize);
-
-  function hsl(h,s,l,a=1){ return `hsla(${h},${s}%,${l}%,${a})`; }
-
-  // ─────────────────────────────────────────
-  //  BLOBS
-  // ─────────────────────────────────────────
-  const blobs = Array.from({length:5},(_,i)=>({
-    x: Math.random()*window.innerWidth,
-    y: Math.random()*window.innerHeight,
-    vx:(Math.random()-.5)*.4, vy:(Math.random()-.5)*.4,
-    r: 130+Math.random()*170,
-    hue:(i/5)*360, phase:Math.random()*Math.PI*2,
-    morphSpeed:.003+Math.random()*.004,
-  }));
-
-  function drawBlobs(bass) {
-    bctx.clearRect(0,0,W,H);
-    blobs.forEach(b=>{
-      // speed up on beat
-      const speedBoost = 1 + bass * 5;
-      b.x += b.vx * speedBoost; b.y += b.vy * speedBoost;
-      if(b.x<-b.r)b.x=W+b.r; if(b.x>W+b.r)b.x=-b.r;
-      if(b.y<-b.r)b.y=H+b.r; if(b.y>H+b.r)b.y=-b.r;
-      // hue races on beat
-      b.hue=(b.hue + .08 + bass*4)%360;
-      b.phase += b.morphSpeed + bass*0.08;
-      const expand = 1 + bass * 1.1;
-      const pts=12;
-      bctx.beginPath();
-      for(let i=0;i<=pts;i++){
-        const angle=(i/pts)*Math.PI*2;
-        const morph=b.r*expand*(.72+.28*Math.sin(b.phase+i*1.1+Math.cos(b.phase*.7+i)));
-        const x=b.x+Math.cos(angle)*morph, y=b.y+Math.sin(angle)*morph;
-        i===0?bctx.moveTo(x,y):bctx.lineTo(x,y);
-      }
-      bctx.closePath();
-      const g=bctx.createRadialGradient(b.x,b.y,0,b.x,b.y,b.r*expand);
-      g.addColorStop(0,hsl(b.hue,100,60+bass*30,.9));
-      g.addColorStop(.5,hsl((b.hue+40)%360,100,50,.5+bass*.3));
-      g.addColorStop(1,hsl((b.hue+80)%360,100,40,0));
-      bctx.fillStyle=g;
-      bctx.filter='blur(24px)';
-      bctx.fill();
-      bctx.filter='none';
-    });
-  }
-
-  // ─────────────────────────────────────────
-  //  TUNNEL
-  // ─────────────────────────────────────────
-  let tt=0;
-  let shockwave = 0; // expands outward on beat
-  let lastBass = 0;
-  const RINGS=44, SPOKES=14;
-  function drawTunnel(bass){
-    tctx.clearRect(0,0,W,H);
-    const maxR=Math.sqrt(cx*cx+cy*cy)*1.2;
-
-    // trigger shockwave on sudden bass hit
-    if(bass - lastBass > 0.12) shockwave = 1;
-    shockwave *= 0.88; // decay
-    lastBass = bass;
-
-    for(let i=RINGS;i>=0;i--){
-      const p=i/RINGS;
-      // shockwave pushes rings outward
-      const shock = shockwave * maxR * 0.18 * Math.sin(p * Math.PI);
-      const r = maxR*p + shock;
-      const depth=1-p;
-      const hue=(tt*30+i*15)%360, sat=80+Math.sin(tt*.5+i*.3)*20;
-      const lit = 10 + depth*20 + bass*40;
-      const alpha = .15+depth*.2+bass*.35;
-      const lw = 1.5 + bass*4 + shockwave*3;
-      tctx.beginPath(); tctx.arc(cx,cy,r,0,Math.PI*2);
-      tctx.strokeStyle=hsl(hue,sat,lit,alpha);
-      tctx.lineWidth=lw; tctx.stroke();
-    }
-    // spokes spin faster on beat
-    const spinBoost = tt*.2 + bass*1.2;
-    for(let s=0;s<SPOKES;s++){
-      const angle=(s/SPOKES)*Math.PI*2 + spinBoost, hue=(tt*20+s*30)%360;
-      tctx.beginPath(); tctx.moveTo(cx,cy);
-      tctx.lineTo(cx+Math.cos(angle)*maxR, cy+Math.sin(angle)*maxR);
-      const g=tctx.createLinearGradient(cx,cy,cx+Math.cos(angle)*maxR,cy+Math.sin(angle)*maxR);
-      g.addColorStop(0,hsl(hue,100,60,.5+bass*.6));
-      g.addColorStop(1,hsl((hue+180)%360,100,60,0));
-      tctx.strokeStyle=g; tctx.lineWidth=1+bass*3; tctx.stroke();
-    }
-    tt+=.012 + bass*.04;
-  }
-
-  // ─────────────────────────────────────────
-  //  PARTICLES + ENHANCED CURSOR
-  // ─────────────────────────────────────────
-  const N=120, CDIST=140, MDIST=220;
-  const particles=Array.from({length:N},(_,i)=>({
-    x:Math.random()*window.innerWidth, y:Math.random()*window.innerHeight,
-    vx:(Math.random()-.5)*.5, vy:(Math.random()-.5)*.5,
-    r:1.5+Math.random()*2, hue:Math.random()*360,
-    orbit: i < 30, // ~30 orbit the cursor
-    orbitR: 25 + Math.random()*90, orbitSpeed: (Math.random()-.5)*.05,
-    orbitAngle: Math.random()*Math.PI*2,
-  }));
-
-  const cursorRings = [
-    {r:18, phase:0, speed:0.05},
-    {r:36, phase:2.1, speed:-0.035},
-    {r:58, phase:4.2, speed:0.025},
-  ];
-  let cursorTime = 0;
-
-  function drawParticles(bass){
-    pctx.clearRect(0,0,W,H);
-
-    // Electric cursor rings — grow and wobble hard on beat
-    if(mouse.x > 0) {
-      cursorRings.forEach(ring=>{
-        ring.phase += ring.speed + bass*0.15;
-        const pts = 20;
-        pctx.beginPath();
-        for(let i=0;i<=pts;i++){
-          const a = (i/pts)*Math.PI*2 + ring.phase;
-          const jitter = ring.r*(1+bass*1.8) + (Math.random()-.5)*10*(1+bass*4);
-          const x = mouse.x + Math.cos(a)*jitter;
-          const y = mouse.y + Math.sin(a)*jitter;
-          i===0?pctx.moveTo(x,y):pctx.lineTo(x,y);
-        }
-        pctx.closePath();
-        pctx.strokeStyle=hsl((cursorTime*80+ring.r*4)%360,100,72,.4+bass*.7);
-        pctx.lineWidth=1.2+bass*2; pctx.stroke();
-      });
-    }
-    cursorTime += 0.016;
-
-    particles.forEach(p=>{
-      if(p.orbit && mouse.x > -100){
-        p.orbitAngle += p.orbitSpeed + bass*0.12;
-        const tx = mouse.x + Math.cos(p.orbitAngle)*p.orbitR*(1+bass*0.8);
-        const ty = mouse.y + Math.sin(p.orbitAngle)*p.orbitR*(1+bass*0.8);
-        p.vx += (tx-p.x)*.015; p.vy += (ty-p.y)*.015;
-      } else {
-        const mdx=mouse.x-p.x, mdy=mouse.y-p.y, md=Math.sqrt(mdx*mdx+mdy*mdy);
-        if(md<MDIST){
-          const f=(MDIST-md)/MDIST*.018; p.vx+=mdx*f; p.vy+=mdy*f;
-        }
-      }
-      // bass kicks particles outward from center
-      const cdx = p.x-cx, cdy = p.y-cy;
-      const cdist = Math.sqrt(cdx*cdx+cdy*cdy);
-      if(cdist > 0) { p.vx += (cdx/cdist)*bass*1.5; p.vy += (cdy/cdist)*bass*1.5; }
-
-      p.x+=p.vx; p.y+=p.vy;
-      const spd=Math.sqrt(p.vx*p.vx+p.vy*p.vy);
-      if(spd>5+bass*4){p.vx=p.vx/spd*(5+bass*4); p.vy=p.vy/spd*(5+bass*4);}
-      if(p.x<0)p.x=W; if(p.x>W)p.x=0; if(p.y<0)p.y=H; if(p.y>H)p.y=0;
-      p.hue=(p.hue + .2 + bass*3)%360;
-      const pr = p.r * (1+bass*3);
-      pctx.beginPath(); pctx.arc(p.x,p.y,pr,0,Math.PI*2);
-      pctx.fillStyle=hsl(p.hue,100,75+bass*20,.85); pctx.fill();
-    });
-
-    for(let i=0;i<particles.length;i++){
-      for(let j=i+1;j<particles.length;j++){
-        const a=particles[i],b=particles[j];
-        const dx=a.x-b.x, dy=a.y-b.y, dist=Math.sqrt(dx*dx+dy*dy);
-        const mda=Math.sqrt((mouse.x-a.x)**2+(mouse.y-a.y)**2);
-        const thresh=(mda<MDIST?CDIST*1.9:CDIST)*(1+bass*0.8);
-        if(dist<thresh){
-          const alpha=(1-dist/thresh)*(.65+bass*.5);
-          pctx.beginPath(); pctx.moveTo(a.x,a.y); pctx.lineTo(b.x,b.y);
-          pctx.strokeStyle=hsl((a.hue+b.hue)/2,100,70+bass*20,Math.min(alpha,1));
-          pctx.lineWidth=.8+bass*1.5; pctx.stroke();
-        }
+  // connections within orbit group only
+  for(let i=0;i<ORBIT_N;i++){
+    for(let j=i+1;j<ORBIT_N;j++){
+      const a=orbitParticles[i],b=orbitParticles[j];
+      const dx=a.x-b.x,dy=a.y-b.y,dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist<CDIST){
+        const alpha=(1-dist/CDIST)*(.65+bass*.35);
+        pctx.beginPath();pctx.moveTo(a.x,a.y);pctx.lineTo(b.x,b.y);
+        pctx.strokeStyle=hsl((a.hue+b.hue)/2,100,75,alpha);
+        pctx.lineWidth=.8+bass*.6;pctx.stroke();
       }
     }
   }
+}
 
-  // Logo + border pulse on beat
-  const logoText = document.getElementById('logoText');
-  const rgbBorder = document.getElementById('logoBox');
-  function animateLogo(bass) {
-    const s = 1 + bass * 0.12;
-    logoText.style.transform = `scale(${s}, ${1+bass*0.06})`;
-    if(bass > 0.2) {
-      logoText.style.textShadow =
-        `0 0 ${15+bass*60}px rgba(255,255,255,${bass*0.95}),`+
-        `0 0 ${50+bass*90}px rgba(0,255,255,${bass*0.7}),`+
-        `0 0 ${80+bass*110}px rgba(255,0,255,${bass*0.4})`;
-      rgbBorder.style.boxShadow =
-        `0 0 ${20+bass*60}px rgba(255,0,255,${bass*0.6}),`+
-        `0 0 ${40+bass*80}px rgba(0,255,255,${bass*0.4}),`+
-        `inset 0 0 ${20+bass*40}px rgba(255,255,255,${bass*0.08})`;
+// ── LIGHTNING ─────────────────────────────────────────────────
+const logoEl=document.getElementById('logoBox');
+let logoCenter={x:innerWidth/2,y:innerHeight/2};
+function updateLogoBox(){
+  const r=logoEl.getBoundingClientRect();
+  logoCenter={x:r.left+r.width/2,y:r.top+r.height/2};
+  boxRect=r;
+}
+setTimeout(updateLogoBox,200);
+
+function drawBolt(ctx,x1,y1,x2,y2,segs,rough){
+  let pts=[{x:x1,y:y1},{x:x2,y:y2}];
+  for(let s=0;s<segs;s++){
+    const next=[];
+    for(let i=0;i<pts.length-1;i++){
+      next.push(pts[i]);
+      next.push({x:(pts[i].x+pts[i+1].x)/2+(Math.random()-.5)*rough,y:(pts[i].y+pts[i+1].y)/2+(Math.random()-.5)*rough});
+    }
+    next.push(pts[pts.length-1]);pts=next;rough*=.55;
+  }
+  ctx.beginPath();pts.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));ctx.stroke();
+}
+let bolts=[],boltCooldown=0;
+const BOLT_HUES=[180,285,55,320,120];
+
+function spawnBolts(bass){
+  if(!audioReady)return;
+  boltCooldown=Math.max(0,boltCooldown-1);
+  const transient=bass-prevSmoothBass;
+  if(bass<0.28||transient<0.05||boltCooldown>0)return;
+  boltCooldown=8;
+  const count=2+Math.floor(bass*2);
+  for(let i=0;i<count;i++){
+    const angle=Math.random()*Math.PI*2;
+    const len=Math.max(W,H)*(.25+Math.random()*.35);
+    bolts.push({x1:logoCenter.x,y1:logoCenter.y,x2:logoCenter.x+Math.cos(angle)*len,y2:logoCenter.y+Math.sin(angle)*len,life:1,decay:.03+Math.random()*.025,hue:BOLT_HUES[Math.floor(Math.random()*BOLT_HUES.length)],rough:50+Math.random()*60});
+  }
+}
+function drawLightning(bass){
+  lctx.clearRect(0,0,W,H);spawnBolts(bass);
+  bolts=bolts.filter(b=>b.life>0.01);
+  bolts.forEach(b=>{
+    b.life-=b.decay;if(b.life<=0)return;
+    lctx.globalAlpha=b.life;
+    lctx.shadowBlur=18;lctx.shadowColor=hsl(b.hue,100,70);
+    lctx.strokeStyle=hsl(b.hue,100,80,b.life*.8);lctx.lineWidth=1.5;
+    drawBolt(lctx,b.x1,b.y1,b.x2,b.y2,4,b.rough);
+    lctx.shadowBlur=0;lctx.strokeStyle=`rgba(255,255,255,${b.life*.7})`;lctx.lineWidth=.5;
+    drawBolt(lctx,b.x1,b.y1,b.x2,b.y2,3,b.rough*.4);lctx.globalAlpha=1;
+  });
+  if(bass>.28){
+    const g=lctx.createRadialGradient(logoCenter.x,logoCenter.y,0,logoCenter.x,logoCenter.y,90*bass);
+    g.addColorStop(0,`rgba(255,255,255,${bass*.28})`);g.addColorStop(.4,`rgba(0,255,255,${bass*.16})`);g.addColorStop(1,'rgba(0,0,0,0)');
+    lctx.fillStyle=g;lctx.beginPath();lctx.arc(logoCenter.x,logoCenter.y,90*bass,0,Math.PI*2);lctx.fill();
+  }
+}
+
+// ── LOGO GLITCH + POP + STROBE ────────────────────────────────
+const logoText=document.getElementById('logoText');
+let glitchTimer=0,strobeState=false,smoothHihat=0;
+let logoShakeX=0,logoShakeY=0,glitchOffset=0,logoPopScale=1;
+const glitchStyle=document.createElement('style');
+document.head.appendChild(glitchStyle);
+
+function setGlitchCSS(intensity){
+  const tx1=(Math.random()-.5)*intensity*24,tx2=(Math.random()-.5)*intensity*24;
+  const ty1=(Math.random()-.5)*intensity*7, ty2=(Math.random()-.5)*intensity*7;
+  const sk1=(Math.random()-.5)*intensity*18,sk2=(Math.random()-.5)*intensity*18;
+  const c1a=Math.floor(Math.random()*75),c1b=c1a+8+Math.floor(Math.random()*32);
+  const c2a=Math.floor(Math.random()*75),c2b=c2a+8+Math.floor(Math.random()*32);
+  const c3a=Math.floor(Math.random()*75),c3b=c3a+5+Math.floor(Math.random()*24);
+  glitchStyle.textContent=`
+    .beat-hit::before{animation:none !important;transform:translate(${tx1}px,${ty1}px) skewX(${sk1}deg) !important;clip-path:polygon(0 ${c1a}%,100% ${c1a}%,100% ${c1b}%,0 ${c1b}%) !important;opacity:1 !important;}
+    .beat-hit::after{animation:none !important;transform:translate(${tx2}px,${ty2}px) skewX(${sk2}deg) !important;clip-path:polygon(0 ${c2a}%,100% ${c2a}%,100% ${c2b}%,0 ${c2b}%) !important;opacity:1 !important;}
+    .beat-hit .glitch-extra{animation:none !important;transform:translate(${-tx1*.6}px,${ty2}px) skewX(${-sk2*.5}deg) !important;clip-path:polygon(0 ${c3a}%,100% ${c3a}%,100% ${c3b}%,0 ${c3b}%) !important;opacity:${.6+Math.random()*.4} !important;}
+  `;
+}
+setGlitchCSS(0.3);
+
+function animateLogo(bass){
+  const hihat=getHihatEnergy();
+  smoothHihat=smoothHihat*.52+hihat*.48;
+  const transient=bass-prevSmoothBass;
+  const bigHit=transient>0.030&&bass>0.18;
+
+  // pop scale — instant expand, spring back
+  if(bigHit) logoPopScale=1+bass*0.25;
+  logoPopScale+=(1-logoPopScale)*0.13;
+
+  // shake
+  if(bigHit){
+    logoShakeX=(Math.random()-.5)*30*bass;
+    logoShakeY=(Math.random()-.5)*22*bass;
+    glitchOffset=Math.min(1,glitchOffset+bass*1.8);
+  }
+  logoShakeX*=0.52;logoShakeY*=0.52;
+  glitchOffset*=0.74;
+
+  const s=logoPopScale*(1+bass*0.07);
+  logoText.style.transform=`scale(${s},${logoPopScale*(1+bass*0.04)}) translate(${logoShakeX}px,${logoShakeY}px)`;
+
+  // chromatic glow, no white
+  if(bass>0.09){
+    const b=Math.min(bass,0.72);
+    logoText.style.textShadow=
+      `0 0 ${4+b*20}px rgba(255,0,200,${b*.92}),`+
+      `0 0 ${10+b*38}px rgba(0,255,210,${b*.72}),`+
+      `0 0 ${22+b*58}px rgba(150,0,255,${b*.58}),`+
+      `0 0 ${38+b*78}px rgba(0,255,90,${b*.28})`;
+  } else {
+    logoText.style.textShadow='';
+  }
+
+  // hihat strobe
+  if(smoothHihat>0.035){
+    strobeState=!strobeState;
+    if(strobeState&&Math.random()<smoothHihat*2.0){
+      logoText.classList.add('strobe-on');
     } else {
-      logoText.style.textShadow = '';
-      rgbBorder.style.boxShadow = '';
+      logoText.classList.remove('strobe-on');
     }
+    if(Math.random()<smoothHihat) setGlitchCSS(smoothHihat*.8+glitchOffset*.5);
+  } else {
+    logoText.classList.remove('strobe-on');
+    strobeState=false;
   }
 
-  // ─────────────────────────────────────────
-  //  MAIN LOOP
-  // ─────────────────────────────────────────
-  resize();
-
-  function loop(){
-    const rawBass = getBassEnergy();
-    smoothBass = smoothBass * 0.72 + rawBass * 0.28;
-    const bass = smoothBass;
-
-    drawBlobs(bass);
-    drawTunnel(bass);
-    drawParticles(bass);
-    animateLogo(bass);
-
-    requestAnimationFrame(loop);
+  // bass hit glitch slam
+  if(bigHit){
+    setGlitchCSS(bass*1.4);
+    logoText.classList.add('beat-hit');
+    glitchTimer=7+Math.floor(bass*7);
   }
+  if(glitchTimer>0){
+    glitchTimer--;
+    if(glitchTimer>0&&glitchTimer%2===0) setGlitchCSS(bass*.9+glitchOffset*.4);
+    if(glitchTimer===0) logoText.classList.remove('beat-hit');
+  }
+}
+
+// ── MAIN LOOP ─────────────────────────────────────────────────
+resize();
+let frameCount=0;
+function loop(){
+  const rawBass=getBassEnergy();
+  prevSmoothBass=smoothBass;
+  smoothBass=smoothBass*.68+rawBass*.32;
+  const bass=smoothBass;
+  if(frameCount++%10===0) updateLogoBox();
+  drawBlobs(bass);
+  drawPlasma(bass);
+  drawTunnel(bass);
+  drawParticles(bass);
+  drawLightning(bass);
+  animateLogo(bass);
+  prevSmoothBass=bass;
   requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
