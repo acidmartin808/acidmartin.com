@@ -177,6 +177,7 @@ const lctx = boltCanvas.getContext('2d');
 function resize() {
   W = window.innerWidth; H = window.innerHeight; cx = W/2; cy = H/2;
   [blobCanvas, tunnelCanvas, particleCanvas, boltCanvas].forEach(c => { c.width=W; c.height=H; });
+  if(typeof specCanvas !== 'undefined') { specCanvas.width=W; specCanvas.height=H; }
 }
 window.addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
 window.addEventListener('touchmove', e => { mouse.x=e.touches[0].clientX; mouse.y=e.touches[0].clientY; }, {passive:true});
@@ -374,167 +375,156 @@ function drawBolts(bass){
   prevBass=bass;
 }
 
-// ─── LIVING BORDER ───────────────────────────────────────
-// The border is drawn on canvas as 4 wiggling lines.
-// Energy pulses (bright nodes) travel around the perimeter on beat.
-// The line itself breathes with sine-wave displacement — always alive.
+// ─── SPECTRUM BORDER ─────────────────────────────────────
+// Audio frequency bars grow outward from all 4 sides of the logo box.
+// Each bar maps to a frequency bin. Solid border line stays underneath.
+// Colors cycle through rainbow, bars glow and flare on bass hits.
 
-const waveCanvas=document.createElement('canvas');
-waveCanvas.style.cssText='position:fixed;inset:0;z-index:11;pointer-events:none;';
-document.body.appendChild(waveCanvas);
-const wctx=waveCanvas.getContext('2d');
+const specCanvas = document.createElement('canvas');
+specCanvas.style.cssText = 'position:fixed;inset:0;z-index:11;pointer-events:none;';
+document.body.appendChild(specCanvas);
+const sctx = specCanvas.getContext('2d');
 
-let borderRect={x:0,y:0,w:0,h:0};
-function updateBorderRect(){
-  const r=document.getElementById('logoBox').getBoundingClientRect();
-  borderRect={x:r.left,y:r.top,w:r.width,h:r.height};
+let borderRect = {x:0, y:0, w:0, h:0};
+function updateBorderRect() {
+  const r = document.getElementById('logoBox').getBoundingClientRect();
+  borderRect = {x:r.left, y:r.top, w:r.width, h:r.height};
 }
-setTimeout(updateBorderRect,250);
-window.addEventListener('resize',()=>{
-  updateLogoCenter(); updateBorderRect();
-  waveCanvas.width=W; waveCanvas.height=H;
+setTimeout(updateBorderRect, 250);
+window.addEventListener('resize', () => {
+  updateLogoCenter();
+  updateBorderRect();
+  specCanvas.width = W;
+  specCanvas.height = H;
 });
 
-// Energy pulses that travel around the perimeter
-let energyPulses=[];
-let borderHue=180;
-let borderTime=0;
+// Smoothed per-bar values for silky animation
+let barSmooth = new Float32Array(512).fill(0);
 
-function spawnPulse(bass){
-  // Start at a random point along the perimeter (0=top-left corner, goes clockwise)
-  energyPulses.push({
-    t: Math.random(),        // 0..1 position along perimeter
-    speed: 0.004+bass*0.008, // how fast it travels around
-    life: 1,
-    decay: 0.018+Math.random()*0.015,
-    hue: borderHue,
-    size: 4+bass*14,
-    trail: 0.18+bass*0.12,   // trail length (0..1 of perimeter)
-  });
-  borderHue=(borderHue+55)%360;
+function drawSpectrumBorder(bass) {
+  sctx.clearRect(0, 0, W, H);
+  if (!borderRect.w || !audioReady) {
+    // Draw plain glowing border even before audio starts
+    drawBorderLine(bass, 180);
+    return;
+  }
+
+  const {x, y, w, h} = borderRect;
+
+  // How many bars per side — scales with box size
+  const barsTop    = Math.floor(w / 5);
+  const barsBottom = barsTop;
+  const barsSide   = Math.floor(h / 5);
+  const totalBars  = barsTop * 2 + barsSide * 2;
+
+  // Pull fresh FFT data
+  analyser.getByteFrequencyData(dataArray);
+
+  // Map bars to frequency bins — use lower half of spectrum (more musical)
+  const usableBins = Math.floor(bufferLength * 0.5);
+
+  // Smooth each bar independently
+  for (let i = 0; i < totalBars; i++) {
+    const binIdx = Math.floor((i / totalBars) * usableBins);
+    const raw = dataArray[binIdx] / 255;
+    barSmooth[i] = barSmooth[i] * 0.78 + raw * 0.22;
+  }
+
+  const maxBarH  = 38 + bass * 55;  // max bar height in px — flares on bass
+  const barGap   = 1;
+  const hueShift = (Date.now() * 0.02) % 360; // slowly rotating color
+
+  let barIdx = 0;
+
+  // ── TOP SIDE — bars point upward ──
+  const barW_top = (w - barGap * (barsTop - 1)) / barsTop;
+  for (let i = 0; i < barsTop; i++) {
+    const bx = x + i * (barW_top + barGap);
+    const bh = barSmooth[barIdx] * maxBarH;
+    const hue = (hueShift + (i / barsTop) * 120) % 360;
+    const alpha = 0.5 + barSmooth[barIdx] * 0.5;
+    drawBar(sctx, bx, y, barW_top, -bh, hue, alpha, bass);
+    barIdx++;
+  }
+
+  // ── BOTTOM SIDE — bars point downward ──
+  const barW_bot = barW_top;
+  for (let i = 0; i < barsBottom; i++) {
+    const bx = x + i * (barW_bot + barGap);
+    const bh = barSmooth[barIdx] * maxBarH;
+    const hue = (hueShift + 120 + (i / barsBottom) * 120) % 360;
+    const alpha = 0.5 + barSmooth[barIdx] * 0.5;
+    drawBar(sctx, bx, y + h, barW_bot, bh, hue, alpha, bass);
+    barIdx++;
+  }
+
+  // ── LEFT SIDE — bars point leftward ──
+  const barH_side = (h - barGap * (barsSide - 1)) / barsSide;
+  for (let i = 0; i < barsSide; i++) {
+    const by = y + i * (barH_side + barGap);
+    const bw = barSmooth[barIdx] * maxBarH;
+    const hue = (hueShift + 240 + (i / barsSide) * 60) % 360;
+    const alpha = 0.5 + barSmooth[barIdx] * 0.5;
+    drawBarH(sctx, x, by, -bw, barH_side, hue, alpha, bass);
+    barIdx++;
+  }
+
+  // ── RIGHT SIDE — bars point rightward ──
+  for (let i = 0; i < barsSide; i++) {
+    const by = y + i * (barH_side + barGap);
+    const bw = barSmooth[barIdx] * maxBarH;
+    const hue = (hueShift + 300 + (i / barsSide) * 60) % 360;
+    const alpha = 0.5 + barSmooth[barIdx] * 0.5;
+    drawBarH(sctx, x + w, by, bw, barH_side, hue, alpha, bass);
+    barIdx++;
+  }
+
+  // Always draw solid border on top of bars
+  drawBorderLine(bass, hueShift);
 }
 
-// Convert 0..1 perimeter position to x,y coordinates (clockwise from top-left)
-function perimeterPoint(t, x, y, w, h, inflate){
-  const inf=inflate||0;
-  const rx=x-inf, ry=y-inf, rw=w+inf*2, rh=h+inf*2;
-  const perim=2*(rw+rh);
-  const d=((t%1)+1)%1 * perim;
-  if(d < rw)            return {x:rx+d,        y:ry};            // top
-  if(d < rw+rh)         return {x:rx+rw,        y:ry+(d-rw)};    // right
-  if(d < rw*2+rh)       return {x:rx+rw-(d-rw-rh), y:ry+rh};    // bottom
-                        return {x:rx,            y:ry+rh-(d-rw*2-rh)}; // left
+// Draw a vertical bar (for top/bottom)
+function drawBar(ctx, bx, by, bw, bh, hue, alpha, bass) {
+  if (Math.abs(bh) < 0.5) return;
+  const grad = ctx.createLinearGradient(bx, by, bx, by + bh);
+  grad.addColorStop(0, hsl(hue, 100, 75, alpha));
+  grad.addColorStop(1, hsl(hue, 100, 55, alpha * 0.3));
+  ctx.shadowBlur = 6 + bass * 12;
+  ctx.shadowColor = hsl(hue, 100, 65, alpha * 0.8);
+  ctx.fillStyle = grad;
+  ctx.fillRect(bx, Math.min(by, by + bh), bw, Math.abs(bh));
+  ctx.shadowBlur = 0;
 }
 
-// Draw one wiggling side of the border
-// pts: array of {x,y} along the edge, displaced outward by sine waves
-function drawWiggleSide(pts, bass, hue, alpha){
-  if(pts.length<2)return;
-  wctx.beginPath();
-  wctx.moveTo(pts[0].x, pts[0].y);
-  for(let i=1;i<pts.length;i++){
-    const mx=(pts[i-1].x+pts[i].x)/2;
-    const my=(pts[i-1].y+pts[i].y)/2;
-    wctx.quadraticCurveTo(pts[i-1].x,pts[i-1].y,mx,my);
-  }
-  wctx.lineTo(pts[pts.length-1].x, pts[pts.length-1].y);
-  wctx.shadowBlur=8+bass*18;
-  wctx.shadowColor=hsl(hue,100,65,alpha);
-  wctx.strokeStyle=hsl(hue,100,80,alpha);
-  wctx.lineWidth=1.2+bass*1.5;
-  wctx.stroke();
-  wctx.shadowBlur=0;
+// Draw a horizontal bar (for left/right sides)
+function drawBarH(ctx, bx, by, bw, bh, hue, alpha, bass) {
+  if (Math.abs(bw) < 0.5) return;
+  const grad = ctx.createLinearGradient(bx, by, bx + bw, by);
+  grad.addColorStop(0, hsl(hue, 100, 75, alpha));
+  grad.addColorStop(1, hsl(hue, 100, 55, alpha * 0.3));
+  ctx.shadowBlur = 6 + bass * 12;
+  ctx.shadowColor = hsl(hue, 100, 65, alpha * 0.8);
+  ctx.fillStyle = grad;
+  ctx.fillRect(Math.min(bx, bx + bw), by, Math.abs(bw), bh);
+  ctx.shadowBlur = 0;
 }
 
-function drawLivingBorder(bass){
-  wctx.clearRect(0,0,W,H);
-  if(!borderRect.w)return;
-
-  const {x,y,w,h}=borderRect;
-  const SEGS=30; // points per side — smooth enough, cheap enough
-  borderTime+=0.022+bass*0.035;
-
-  // Cycle hue of the baseline border
-  const baseHue=(borderTime*20)%360;
-  const baseAlpha=0.55+bass*0.4;
-  const amp=2+bass*9; // wiggle amplitude in px — grows dramatically on beat
-
-  // Build 4 wiggling sides
-  // Each point is displaced perpendicular to the edge direction
-  // Top side (left→right, displaced upward)
-  const top=[];
-  for(let i=0;i<=SEGS;i++){
-    const frac=i/SEGS;
-    const disp=amp*Math.sin(borderTime*1.1+frac*Math.PI*3+0);
-    top.push({x:x+frac*w, y:y+disp});
-  }
-  // Right side (top→bottom, displaced rightward)
-  const right=[];
-  for(let i=0;i<=SEGS;i++){
-    const frac=i/SEGS;
-    const disp=amp*Math.sin(borderTime*0.9+frac*Math.PI*3+1.5);
-    right.push({x:x+w+disp, y:y+frac*h});
-  }
-  // Bottom side (right→left, displaced downward)
-  const bottom=[];
-  for(let i=0;i<=SEGS;i++){
-    const frac=i/SEGS;
-    const disp=amp*Math.sin(borderTime*1.3+frac*Math.PI*3+3);
-    bottom.push({x:x+w-frac*w, y:y+h+disp});
-  }
-  // Left side (bottom→top, displaced leftward)
-  const left=[];
-  for(let i=0;i<=SEGS;i++){
-    const frac=i/SEGS;
-    const disp=amp*Math.sin(borderTime*1.0+frac*Math.PI*3+4.5);
-    left.push({x:x+disp, y:y+h-frac*h});
-  }
-
-  drawWiggleSide(top,   bass, baseHue,           baseAlpha);
-  drawWiggleSide(right, bass, (baseHue+60)%360,  baseAlpha);
-  drawWiggleSide(bottom,bass, (baseHue+120)%360, baseAlpha);
-  drawWiggleSide(left,  bass, (baseHue+180)%360, baseAlpha);
-
-  // Spawn pulses on beats + ambient
-  const transient=Math.max(0,bass-prevBass);
-  if(transient>0.05&&bass>0.15){
-    const n=1+Math.floor(transient*12);
-    for(let i=0;i<Math.min(n,4);i++) spawnPulse(bass);
-  }
-  if(audioReady&&bass>0.06&&Math.random()<bass*0.12) spawnPulse(bass*0.6);
-
-  // Draw energy pulses traveling along the perimeter
-  energyPulses=energyPulses.filter(p=>p.life>0.01);
-  energyPulses.forEach(p=>{
-    p.t=(p.t+p.speed)%1;
-    p.life-=p.decay;
-    if(p.life<=0)return;
-    const a=Math.max(0,p.life);
-
-    // Bright leading node
-    const pos=perimeterPoint(p.t,x,y,w,h,0);
-    wctx.beginPath();
-    wctx.arc(pos.x,pos.y,p.size*(0.4+a*0.6),0,Math.PI*2);
-    wctx.shadowBlur=20+bass*25;
-    wctx.shadowColor=hsl(p.hue,100,70,a);
-    wctx.fillStyle=hsl(p.hue,100,90,a*0.9);
-    wctx.fill();
-    wctx.shadowBlur=0;
-
-    // Glowing trail — draw smaller nodes behind the leader
-    const trailSteps=12;
-    for(let i=1;i<=trailSteps;i++){
-      const tf=i/trailSteps;
-      const trailT=((p.t - p.trail*tf)+1)%1;
-      const tp=perimeterPoint(trailT,x,y,w,h,0);
-      const ta=a*(1-tf)*0.6;
-      const tr=p.size*(1-tf*0.85)*(0.3+a*0.4);
-      wctx.beginPath();
-      wctx.arc(tp.x,tp.y,tr,0,Math.PI*2);
-      wctx.fillStyle=hsl(p.hue,100,75,ta);
-      wctx.fill();
-    }
-  });
+// Solid glowing border rectangle — always on top
+function drawBorderLine(bass, hueShift) {
+  const {x, y, w, h} = borderRect;
+  if (!w) return;
+  const hue = (hueShift || 180);
+  sctx.shadowBlur = 10 + bass * 22;
+  sctx.shadowColor = hsl(hue, 100, 65, 0.9);
+  sctx.strokeStyle = hsl(hue, 100, 85, 0.85 + bass * 0.15);
+  sctx.lineWidth = 1.5 + bass * 1.5;
+  sctx.strokeRect(x, y, w, h);
+  // Second brighter inner line for extra crispness
+  sctx.shadowBlur = 4;
+  sctx.strokeStyle = `rgba(255,255,255,${0.4 + bass * 0.5})`;
+  sctx.lineWidth = 0.5;
+  sctx.strokeRect(x, y, w, h);
+  sctx.shadowBlur = 0;
 }
 
 // ─── LOGO: GLITCH + HI-HAT STROBE ────────────────────────
@@ -603,7 +593,7 @@ function loop(){
   drawTunnel(bass);
   drawParticles(bass);
   drawBolts(bass);
-  drawLivingBorder(bass);
+  drawSpectrumBorder(bass);
   animateLogo(bass, hihat);
 
   requestAnimationFrame(loop);
