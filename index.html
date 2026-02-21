@@ -464,105 +464,47 @@ function drawLightning(bass){
 }
 
 // ── AUDIO SPECTRUM WAVEFORM ───────────────────────────────────
-// Smooth layered blobs like the reference screenshots
-// Uses cubic bezier smoothing for organic rounded peaks
-// TOP: left-anchored, grows UP. BOTTOM: right-anchored, grows DOWN (reversed)
+// One continuous waveform, full width of logo box
+// Left=green/cyan, Middle=blue/purple, Right=pink/magenta
+// Only bass frequencies drive it — quiet parts stay flat at baseline
 
-const WAVE_PTS = 64; // lower res = smoother blobs
-// 4 frequency bands per side, stacked like the reference
-const bands = [
-  // binStart, binEnd, smoothing factor (lower = snappier)
-  { s: new Float32Array(WAVE_PTS), b0f:0.00, b1f:0.08, spd:0.50 }, // sub/kick  — snappiest
-  { s: new Float32Array(WAVE_PTS), b0f:0.05, b1f:0.15, spd:0.58 }, // bass
-  { s: new Float32Array(WAVE_PTS), b0f:0.11, b1f:0.26, spd:0.64 }, // low-mid
-  { s: new Float32Array(WAVE_PTS), b0f:0.20, b1f:0.40, spd:0.70 }, // mid
-];
-
-// Colors match reference: pink→cyan→green layered
-const BAND_COLORS_TOP = [
-  { fill:[300,100,60], stroke:[180,100,75] }, // magenta fill, cyan stroke
-  { fill:[200,100,55], stroke:[140,100,72] }, // cyan fill, green stroke
-  { fill:[260,100,58], stroke:[300,100,72] }, // purple fill, pink stroke
-  { fill:[160,100,52], stroke:[200,100,70] }, // green fill, cyan stroke
-];
-const BAND_COLORS_BOT = [
-  { fill:[180,100,58], stroke:[300,100,72] },
-  { fill:[300,100,55], stroke:[160,100,72] },
-  { fill:[140,100,52], stroke:[260,100,70] },
-  { fill:[220,100,55], stroke:[140,100,72] },
-];
-
-let specHue = 0;
-let shakeX = 0, shakeY = 0;
+const WAVE_PTS = 90;
+// Only read bass/sub bins — this is what makes sparse tall peaks
+const BASS_BIN_END = 0.18; // top 18% of spectrum = ~0-1.2kHz
+let waveBuf   = new Float32Array(WAVE_PTS); // smoothed display values
+let waveRaw   = new Float32Array(WAVE_PTS); // unsmoothed
+let specShakeX = 0, specShakeY = 0;
 let prevBassForShake = 0;
 
 function updateWaveData(){
   if(!audioReady) return;
-  const specEnd = Math.floor(bufferLength * 0.65);
-  bands.forEach(b=>{
-    const b0=Math.floor(b.b0f*specEnd), b1=Math.floor(b.b1f*specEnd);
-    const span=Math.max(1,b1-b0);
-    for(let i=0;i<WAVE_PTS;i++){
-      const bin=b0+Math.floor((i/WAVE_PTS)*span);
-      const raw=(freqData[bin]||0)/255;
-      // boost low-end sensitivity
-      const boosted = Math.pow(raw, 0.55);
-      b.s[i]=b.s[i]*b.spd + boosted*(1-b.spd);
-    }
-  });
+  const specEnd = Math.floor(bufferLength * BASS_BIN_END);
+  for(let i=0;i<WAVE_PTS;i++){
+    const bin = Math.floor((i/WAVE_PTS)*specEnd);
+    const raw = (freqData[bin]||0)/255;
+    // power curve: compress quiet parts to near zero, amplify loud peaks
+    const shaped = Math.pow(raw, 1.8);
+    waveRaw[i] = shaped;
+    // fast attack, medium release — snappy like reference
+    const spd = shaped > waveBuf[i] ? 0.35 : 0.78;
+    waveBuf[i] = waveBuf[i]*spd + shaped*(1-spd);
+  }
 }
 
-// Draw a single smooth filled blob using bezier curves
-function drawBlob(arr, xLeft, xRight, edgeY, dir, maxH, fillColor, strokeColor, alpha){
-  const n = arr.length;
-  if(n < 2) return;
-
-  // build point array
-  const pts = [];
-  for(let i=0;i<n;i++){
-    pts.push({
-      x: xLeft + (i/(n-1))*(xRight-xLeft),
-      y: edgeY + dir * arr[i] * maxH
-    });
-  }
-
-  // filled shape with smooth beziers
-  const [fh,fs,fl] = fillColor;
-  const grad = sctx.createLinearGradient(0, edgeY, 0, edgeY + dir*maxH);
-  grad.addColorStop(0,   `hsla(${fh},${fs}%,${fl}%,${alpha*0.05})`);
-  grad.addColorStop(0.45,`hsla(${fh},${fs}%,${fl}%,${alpha*0.55})`);
-  grad.addColorStop(1,   `hsla(${(fh+50)%360},${fs}%,${Math.min(fl+20,92)}%,${alpha*0.85})`);
-
-  sctx.beginPath();
-  sctx.moveTo(xLeft, edgeY);
-  sctx.lineTo(pts[0].x, pts[0].y);
-  // smooth catmull-rom style beziers through all points
+// Smooth path using catmull-rom beziers
+function catmullRomPath(ctx, pts){
+  ctx.moveTo(pts[0].x, pts[0].y);
   for(let i=0;i<pts.length-1;i++){
-    const cp1x = pts[i].x   + (pts[i+1].x - (pts[i-1]||pts[i]).x)/6;
-    const cp1y = pts[i].y   + (pts[i+1].y - (pts[i-1]||pts[i]).y)/6;
-    const cp2x = pts[i+1].x - (pts[i+2]||pts[i+1]).x/6 + pts[i].x/6;
-    const cp2y = pts[i+1].y - (pts[i+2]||pts[i+1]).y/6 + pts[i].y/6;
-    sctx.bezierCurveTo(cp1x,cp1y, cp2x,cp2y, pts[i+1].x, pts[i+1].y);
+    const p0 = pts[Math.max(0,i-1)];
+    const p1 = pts[i];
+    const p2 = pts[i+1];
+    const p3 = pts[Math.min(pts.length-1,i+2)];
+    const cp1x = p1.x + (p2.x-p0.x)/6;
+    const cp1y = p1.y + (p2.y-p0.y)/6;
+    const cp2x = p2.x - (p3.x-p1.x)/6;
+    const cp2y = p2.y - (p3.y-p1.y)/6;
+    ctx.bezierCurveTo(cp1x,cp1y,cp2x,cp2y,p2.x,p2.y);
   }
-  sctx.lineTo(xRight, edgeY);
-  sctx.closePath();
-  sctx.fillStyle = grad;
-  sctx.fill();
-
-  // glowing stroke along the ridge only
-  const [sh,ss,sl] = strokeColor;
-  sctx.strokeStyle = `hsla(${sh},${ss}%,${sl}%,${alpha*0.9})`;
-  sctx.lineWidth = 2;
-  sctx.beginPath();
-  sctx.moveTo(pts[0].x, pts[0].y);
-  for(let i=0;i<pts.length-1;i++){
-    const cp1x = pts[i].x   + (pts[i+1].x - (pts[i-1]||pts[i]).x)/6;
-    const cp1y = pts[i].y   + (pts[i+1].y - (pts[i-1]||pts[i]).y)/6;
-    const cp2x = pts[i+1].x - (pts[i+2]||pts[i+1]).x/6 + pts[i].x/6;
-    const cp2y = pts[i+1].y - (pts[i+2]||pts[i+1]).y/6 + pts[i].y/6;
-    sctx.bezierCurveTo(cp1x,cp1y, cp2x,cp2y, pts[i+1].x, pts[i+1].y);
-  }
-  sctx.stroke();
 }
 
 function drawSpectrumBorder(bass){
@@ -572,49 +514,96 @@ function drawSpectrumBorder(bass){
   updateWaveData();
 
   const bx=boxRect.left, by=boxRect.top, bw=boxRect.width, bh=boxRect.height;
-  specHue = (specHue + 0.4 + bass*1.5) % 360;
 
-  // bass shake
+  // shake on bass hit
   const bt = bass - prevBassForShake;
-  if(bt > 0.055 && bass > 0.25){ shakeX=(Math.random()-.5)*12*bass; shakeY=(Math.random()-.5)*9*bass; }
-  shakeX*=0.72; shakeY*=0.72;
+  if(bt > 0.05 && bass > 0.22){
+    specShakeX=(Math.random()-.5)*10*bass;
+    specShakeY=(Math.random()-.5)*7*bass;
+  }
+  specShakeX*=0.70; specShakeY*=0.70;
   prevBassForShake = bass;
 
   sctx.save();
-  sctx.translate(shakeX, shakeY);
-  sctx.shadowBlur = 18 + bass*30;
-  sctx.shadowColor = `hsl(${specHue},100%,68%)`;
+  sctx.translate(specShakeX, specShakeY);
 
-  // height: tall reactive blobs
-  const maxH = 65 + bass * 125;
+  const maxH = 55 + bass * 110; // tall spikes on drops, modest at rest
 
-  // ── TOP: left-anchored, 4 stacked bands, grow upward ──────
-  // each band slightly narrower = nested/layered look like reference
-  const topWidths = [0.48, 0.36, 0.26, 0.17]; // fraction of bw
-  bands.forEach((b,i)=>{
-    const xR = bx + topWidths[i]*bw;
-    const c = BAND_COLORS_TOP[i];
-    const amp = 1.0 - i*0.15; // each layer slightly shorter
-    const alpha = 0.88 - i*0.1;
-    drawBlob(b.s, bx, xR, by, -1, maxH*amp, c.fill, c.stroke, alpha);
-  });
+  // Build point arrays for top and bottom
+  const topPts=[], botPts=[];
+  for(let i=0;i<WAVE_PTS;i++){
+    const x = bx + (i/(WAVE_PTS-1))*bw;
+    const h = waveBuf[i]*maxH;
+    topPts.push({x, y: by   - h});  // grows up from top edge
+    botPts.push({x, y: by+bh+ h});  // grows down from bottom edge (same data, mirrored)
+  }
+  // bottom is reversed so it mirrors properly
+  botPts.reverse();
 
-  // ── BOTTOM: right-anchored, reversed, grow downward ───────
-  const botWidths = [0.48, 0.36, 0.26, 0.17];
-  bands.forEach((b,i)=>{
-    const rev = b.s.slice().reverse();
-    const xL = bx + bw - botWidths[i]*bw;
-    const c = BAND_COLORS_BOT[i];
-    const amp = 1.0 - i*0.15;
-    const alpha = 0.88 - i*0.1;
-    drawBlob(rev, xL, bx+bw, by+bh, 1, maxH*amp, c.fill, c.stroke, alpha);
-  });
+  // ── Draw function for one edge ─────────────────────────────
+  function drawEdge(pts, edgeY, dir /* -1=top +1=bot */){
+    // Tri-color horizontal gradient: green→blue→pink
+    const grad = sctx.createLinearGradient(bx, 0, bx+bw, 0);
+    if(dir < 0){
+      // TOP: green left, cyan-blue mid, pink right (matches ref img 2&3)
+      grad.addColorStop(0,   'rgba(0,255,120,0.95)');
+      grad.addColorStop(0.25,'rgba(0,230,255,0.9)');
+      grad.addColorStop(0.5, 'rgba(80,80,255,0.88)');
+      grad.addColorStop(0.75,'rgba(200,0,255,0.9)');
+      grad.addColorStop(1,   'rgba(255,0,160,0.95)');
+    } else {
+      // BOTTOM: same but slightly shifted hue
+      grad.addColorStop(0,   'rgba(255,0,160,0.95)');
+      grad.addColorStop(0.25,'rgba(200,0,255,0.9)');
+      grad.addColorStop(0.5, 'rgba(80,80,255,0.88)');
+      grad.addColorStop(0.75,'rgba(0,200,255,0.9)');
+      grad.addColorStop(1,   'rgba(0,255,120,0.95)');
+    }
+
+    // vertical fade gradient for the fill
+    const fadeGrad = sctx.createLinearGradient(0, edgeY, 0, edgeY+dir*(maxH+20));
+    fadeGrad.addColorStop(0,   'rgba(0,0,0,0)');
+    fadeGrad.addColorStop(0.3, 'rgba(120,0,200,0.25)');
+    fadeGrad.addColorStop(1,   'rgba(200,0,200,0.0)');
+
+    // glow shadow
+    sctx.shadowBlur  = 20 + bass*35;
+    sctx.shadowColor = dir<0 ? `hsl(${200+bass*80},100%,65%)` : `hsl(${300+bass*60},100%,65%)`;
+
+    // filled area (fade only)
+    sctx.beginPath();
+    sctx.moveTo(bx, edgeY);
+    catmullRomPath(sctx, pts);
+    sctx.lineTo(bx+bw, edgeY);
+    sctx.closePath();
+    sctx.fillStyle = fadeGrad;
+    sctx.fill();
+
+    // glowing colored stroke — this is the visible waveform line
+    sctx.beginPath();
+    catmullRomPath(sctx, pts);
+    sctx.strokeStyle = grad;
+    sctx.lineWidth   = 3;
+    sctx.stroke();
+
+    // bright inner highlight line
+    sctx.shadowBlur = 6;
+    sctx.strokeStyle = dir<0 ? 'rgba(180,255,255,0.6)' : 'rgba(255,180,255,0.6)';
+    sctx.lineWidth = 1;
+    sctx.beginPath();
+    catmullRomPath(sctx, pts);
+    sctx.stroke();
+  }
+
+  drawEdge(topPts, by,    -1);
+  drawEdge(botPts, by+bh,  1);
 
   // subtle side lines
   sctx.shadowBlur=0;
-  sctx.strokeStyle='rgba(255,255,255,0.1)'; sctx.lineWidth=1;
+  sctx.strokeStyle='rgba(255,255,255,0.08)'; sctx.lineWidth=1;
   sctx.beginPath(); sctx.moveTo(bx,by); sctx.lineTo(bx,by+bh); sctx.stroke();
   sctx.beginPath(); sctx.moveTo(bx+bw,by); sctx.lineTo(bx+bw,by+bh); sctx.stroke();
+
   sctx.restore();
 }
 
@@ -682,17 +671,17 @@ function animateLogo(bass){
   smoothHihat = smoothHihat*0.55 + hihat*0.45;
 
   // ── scale pulse ───────────────────────────────────────────
-  const s = 1 + bass*0.11;
+  const s = 1 + bass*0.13;
 
   // ── logo BOX shake on bass hit ────────────────────────────
   const transient = bass - prevSmoothBass;
-  if(transient > 0.04 && bass > 0.22){
-    logoShakeX = (Math.random()-0.5)*14*bass;
-    logoShakeY = (Math.random()-0.5)*10*bass;
-    glitchOffset = Math.min(1, glitchOffset + bass*1.2);
+  if(transient > 0.035 && bass > 0.18){
+    logoShakeX = (Math.random()-0.5)*22*bass;
+    logoShakeY = (Math.random()-0.5)*16*bass;
+    glitchOffset = Math.min(1, glitchOffset + bass*1.5);
   }
-  logoShakeX *= 0.65; logoShakeY *= 0.65;
-  glitchOffset *= 0.80;
+  logoShakeX *= 0.60; logoShakeY *= 0.60;
+  glitchOffset *= 0.78;
 
   // combine scale + shake into transform
   logoText.style.transform =
@@ -730,10 +719,10 @@ function animateLogo(bass){
   }
 
   // ── BASS TRANSIENT: hard glitch slam ─────────────────────
-  if(transient > 0.045 && bass > 0.26){
-    setGlitchCSS(bass * 1.0); // regen random slice positions
+  if(transient > 0.032 && bass > 0.20){
+    setGlitchCSS(bass * 1.2);
     logoText.classList.add('beat-hit');
-    glitchTimer = 5 + Math.floor(bass * 4); // hold longer on harder hits
+    glitchTimer = 6 + Math.floor(bass * 5);
   }
   if(glitchTimer > 0){
     glitchTimer--;
