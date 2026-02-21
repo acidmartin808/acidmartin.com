@@ -109,7 +109,7 @@
 <div class="vignette"></div>
 <div class="stage">
   <div class="rgb-border" id="logoBox">
-    <div class="glitch" data-text="acid martin" id="logoText">acid martin</div>
+    <div class="glitch" data-text="Acid Martin" id="logoText">Acid Martin</div>
     <div class="sub">something is coming</div>
   </div>
 </div>
@@ -177,6 +177,7 @@ const lctx = boltCanvas.getContext('2d');
 function resize() {
   W = window.innerWidth; H = window.innerHeight; cx = W/2; cy = H/2;
   [blobCanvas, tunnelCanvas, particleCanvas, boltCanvas].forEach(c => { c.width=W; c.height=H; });
+  lavaCanvas.width=W; lavaCanvas.height=H;
 }
 window.addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
 window.addEventListener('touchmove', e => { mouse.x=e.touches[0].clientX; mouse.y=e.touches[0].clientY; }, {passive:true});
@@ -305,7 +306,7 @@ function drawParticles(bass){
   }
 }
 
-// ─── LIGHTWEIGHT LIGHTNING (only on big bass hits) ────────
+// ─── LIGHTNING ────────────────────────────────────────────
 function lightningBolt(ctx,x1,y1,x2,y2,rough,depth){
   if(depth<=0){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();return;}
   const mx=(x1+x2)/2+(Math.random()-.5)*rough;
@@ -321,29 +322,26 @@ function updateLogoCenter(){
   logoCenter={x:r.left+r.width/2,y:r.top+r.height/2};
 }
 setTimeout(updateLogoCenter,200);
-window.addEventListener('resize',updateLogoCenter);
+window.addEventListener('resize',()=>{updateLogoCenter();updateBlobOrbits();});
 
 let prevBass=0;
 const BOLT_HUES=[180,285,55,320];
 
 function drawBolts(bass){
   lctx.clearRect(0,0,W,H);
-  // Only fire on a sudden hard bass transient — keeps bolt count very low
-  const transient = bass - prevBass;
-  prevBass = bass;
-  if(transient > 0.15 && bass > 0.35){
-    // spawn just 2–4 bolts max
-    const count = 2 + Math.floor(transient * 8);
-    for(let i=0;i<Math.min(count,4);i++){
+  const transient=bass-prevBass;
+  if(transient>0.05&&bass>0.18){
+    const count=2+Math.floor(transient*20);
+    for(let i=0;i<Math.min(count,5);i++){
       const angle=Math.random()*Math.PI*2;
-      const len=120+Math.random()*Math.min(W,H)*0.4;
+      const len=100+Math.random()*Math.min(W,H)*0.45;
       bolts.push({
         x1:logoCenter.x,y1:logoCenter.y,
         x2:logoCenter.x+Math.cos(angle)*len,
         y2:logoCenter.y+Math.sin(angle)*len,
-        life:1, decay:0.12+Math.random()*0.12,
+        life:1,decay:0.1+Math.random()*0.12,
         hue:BOLT_HUES[Math.floor(Math.random()*BOLT_HUES.length)],
-        rough:30+Math.random()*50,
+        rough:25+Math.random()*55,
       });
     }
   }
@@ -353,117 +351,133 @@ function drawBolts(bass){
     if(b.life<=0)return;
     const a=Math.max(0,b.life);
     lctx.globalAlpha=a;
-    lctx.shadowBlur=16; lctx.shadowColor=hsl(b.hue,100,70);
-    lctx.strokeStyle=hsl(b.hue,100,80,0.8);
+    lctx.shadowBlur=18;lctx.shadowColor=hsl(b.hue,100,70);
+    lctx.strokeStyle=hsl(b.hue,100,80,0.85);
     lctx.lineWidth=1.5;
     lightningBolt(lctx,b.x1,b.y1,b.x2,b.y2,b.rough,3);
-    lctx.strokeStyle=`rgba(255,255,255,0.9)`;
+    lctx.strokeStyle='rgba(255,255,255,0.95)';
     lctx.lineWidth=0.5;
     lightningBolt(lctx,b.x1,b.y1,b.x2,b.y2,b.rough*.4,2);
-    lctx.globalAlpha=1; lctx.shadowBlur=0;
+    lctx.globalAlpha=1;lctx.shadowBlur=0;
+  });
+  prevBass=bass;
+}
+
+// ─── LAVA BLOBS AROUND LOGO ───────────────────────────────
+const lavaCanvas=document.createElement('canvas');
+lavaCanvas.style.cssText='position:fixed;inset:0;z-index:9;pointer-events:none;mix-blend-mode:screen;';
+document.body.appendChild(lavaCanvas);
+const lvctx=lavaCanvas.getContext('2d');
+
+const logoBlobs=Array.from({length:6},(_,i)=>({
+  angle:(i/6)*Math.PI*2,
+  speed:0.007+Math.random()*0.006,
+  r:16+Math.random()*12,
+  orbitR:0,cx:0,cy:0,
+  phase:Math.random()*Math.PI*2,
+  hue:(i/6)*360,
+  pop:0,
+}));
+
+function updateBlobOrbits(){
+  const rect=document.getElementById('logoBox').getBoundingClientRect();
+  const hw=rect.width/2,hh=rect.height/2;
+  const base=Math.sqrt(hw*hw+hh*hh)*0.78;
+  logoBlobs.forEach((b,i)=>{
+    b.orbitR=base+(i%2===0?14:-14);
+    b.cx=rect.left+rect.width/2;
+    b.cy=rect.top+rect.height/2;
+  });
+}
+setTimeout(updateBlobOrbits,250);
+
+function drawLavaBlobs(bass){
+  lvctx.clearRect(0,0,W,H);
+  if(!logoBlobs[0].orbitR)return;
+  const transient=Math.max(0,bass-prevBass);
+  logoBlobs.forEach(b=>{
+    b.angle+=b.speed+bass*0.03;
+    b.hue=(b.hue+0.3+bass*1.5)%360;
+    b.phase+=0.025;
+    if(transient>0.06)b.pop=Math.min(1,b.pop+transient*3);
+    b.pop*=0.9;
+    const popDist=b.orbitR+b.pop*140;
+    const wobble=Math.sin(b.phase)*14;
+    const x=b.cx+Math.cos(b.angle)*(popDist+wobble);
+    const y=b.cy+Math.sin(b.angle)*(popDist*0.72+wobble*0.6);
+    const br=b.r*(1+bass*1.0+b.pop*2.2);
+    const g=lvctx.createRadialGradient(x,y,0,x,y,br*2.8);
+    g.addColorStop(0,  hsl(b.hue,100,72,0.9+b.pop*0.1));
+    g.addColorStop(0.4,hsl((b.hue+40)%360,100,55,0.5));
+    g.addColorStop(1,  hsl((b.hue+80)%360,100,40,0));
+    lvctx.beginPath();
+    lvctx.arc(x,y,br*2.8,0,Math.PI*2);
+    lvctx.fillStyle=g;
+    lvctx.filter='blur(10px)';
+    lvctx.fill();
+    lvctx.filter='none';
+    const tx=b.cx+Math.cos(b.angle)*b.orbitR*0.45;
+    const ty=b.cy+Math.sin(b.angle)*b.orbitR*0.45*0.72;
+    const trail=lvctx.createLinearGradient(x,y,tx,ty);
+    trail.addColorStop(0,hsl(b.hue,100,65,0.35+b.pop*0.35));
+    trail.addColorStop(1,hsl(b.hue,100,65,0));
+    lvctx.beginPath();
+    lvctx.moveTo(x,y);lvctx.lineTo(tx,ty);
+    lvctx.strokeStyle=trail;
+    lvctx.lineWidth=br*0.7;
+    lvctx.lineCap='round';
+    lvctx.stroke();
   });
 }
 
-// ─── LOGO: GLITCH + HI-HAT STROBE + LIQUID BORDER ────────
-const logoText = document.getElementById('logoText');
-const logoBox  = document.getElementById('logoBox');
+// ─── LOGO: GLITCH + HI-HAT STROBE ────────────────────────
+const logoText=document.getElementById('logoText');
+const logoBox=document.getElementById('logoBox');
+let strobePhase=0;
+let glitchT=0;
 
-// Hi-hat strobe clock — fires at ~16th note rate (approx 120bpm = 8 strobes/sec)
-let strobePhase = 0;
-let glitchT = 0;
-let liquidT = 0;
-
-// Pre-generate random liquid offsets for 8 border points — updated each frame
-// Border has 8 control points (2 per corner, gives fluid organic shape)
-function liquidPolygon(t, bass, hihat) {
-  // 8 points around the border — each one gets independent sine-driven offset
-  // amplitude scales hard with bass for that "about to break" feeling
-  const amp = 8 + bass * 55 + hihat * 20;
-  const spd = 1 + bass * 3;
-
-  // Top edge: left → right
-  const tx1 =       Math.sin(t*spd*1.1+0)*amp;
-  const ty1 =       Math.sin(t*spd*0.9+1)*amp;
-  const tx2 = 100 + Math.sin(t*spd*1.3+2)*amp;
-  const ty2 =       Math.sin(t*spd*1.0+3)*amp;
-
-  // Right edge: top → bottom
-  const rx1 =       Math.sin(t*spd*0.8+4)*amp;
-  const ry1 = 33  + Math.sin(t*spd*1.2+5)*amp;
-  const rx2 =       Math.sin(t*spd*1.4+6)*amp;
-  const ry2 = 66  + Math.sin(t*spd*0.7+7)*amp;
-
-  // Bottom edge: right → left
-  const bx1 = 100 + Math.sin(t*spd*1.0+8)*amp;
-  const by1 =       Math.sin(t*spd*1.3+9)*amp;
-  const bx2 =       Math.sin(t*spd*0.9+10)*amp;
-  const by2 =       Math.sin(t*spd*1.1+11)*amp;
-
-  // Left edge: bottom → top
-  const lx1 =       Math.sin(t*spd*1.2+12)*amp;
-  const ly1 = 66  + Math.sin(t*spd*0.8+13)*amp;
-  const lx2 =       Math.sin(t*spd*1.4+14)*amp;
-  const ly2 = 33  + Math.sin(t*spd*1.0+15)*amp;
-
-  return `polygon(
-    ${tx1}px ${ty1}px,
-    calc(100% + ${tx2-100}px) ${ty2}px,
-    calc(100% + ${rx1}px) ${ry1}px,
-    calc(100% + ${rx2}px) ${ry2}px,
-    calc(100% + ${bx1-100}px) calc(100% + ${by1}px),
-    ${bx2}px calc(100% + ${by2}px),
-    ${lx1}px calc(100% + ${ly1-66}px),
-    ${lx2}px ${ly2}px
-  )`;
-}
-
-function animateLogo(bass, hihat) {
-  // ── Scale pulse
-  const s = 1 + bass * 0.09;
-  logoText.style.transform = `scale(${s},${1+bass*0.045})`;
-
-  // ── Hi-hat strobe (16th note at ~120bpm ≈ 8Hz)
-  // We simulate it by using a fast clock + hihat energy to trigger opacity flicker
-  strobePhase += 0.52; // ~8 strobes/sec at 60fps
-  const strobeTick = Math.sin(strobePhase) > 0.6;
-  if(hihat > 0.15 && strobeTick) {
-    logoText.style.opacity = 0.15 + Math.random() * 0.5;
+function animateLogo(bass,hihat){
+  const s=1+bass*0.09;
+  strobePhase+=0.52;
+  const strobeTick=Math.sin(strobePhase)>0.55;
+  if(hihat>0.12&&strobeTick){
+    logoText.style.opacity=0.08+Math.random()*0.45;
   } else {
-    logoText.style.opacity = 1;
+    logoText.style.opacity=1;
   }
-
-  // ── Enhanced glitch on hi-hats and bass
-  glitchT += 0.05 + bass * 0.2 + hihat * 0.3;
-  const glitchAmp = bass * 14 + hihat * 8;
-  if(glitchAmp > 2) {
-    const gx = (Math.random()-.5)*glitchAmp;
-    const gy = (Math.random()-.5)*glitchAmp*0.4;
-    const skew = (Math.random()-.5)*glitchAmp*0.3;
-    logoText.style.textShadow =
-      `${gx}px ${gy}px 0 rgba(255,0,255,${0.6+bass*0.4}),`+
-      `${-gx}px ${-gy}px 0 rgba(0,255,255,${0.6+bass*0.4}),`+
-      `0 0 ${20+bass*60}px rgba(255,255,255,${bass*0.8})`;
-    // occasional full glitch slice
-    if(Math.random() < bass * 0.3 + hihat * 0.15) {
-      logoText.style.transform = `scale(${s},${1+bass*0.045}) translate(${gx*1.5}px,${gy}px) skewX(${skew}deg)`;
+  glitchT+=0.05+bass*0.25+hihat*0.35;
+  const glitchAmp=bass*24+hihat*14;
+  if(glitchAmp>1.5){
+    const gx=(Math.random()-.5)*glitchAmp;
+    const gy=(Math.random()-.5)*glitchAmp*0.5;
+    const skew=(Math.random()-.5)*glitchAmp*0.5;
+    logoText.style.textShadow=
+      `${gx*1.3}px ${gy}px 0 rgba(255,0,255,${0.7+bass*0.3}),`+
+      `${-gx*1.3}px ${-gy}px 0 rgba(0,255,255,${0.7+bass*0.3}),`+
+      `${gx*0.5}px 0 0 rgba(255,255,0,${bass*0.6}),`+
+      `0 0 ${20+bass*70}px rgba(255,255,255,${bass*0.85})`;
+    const bigHit=bass>0.32&&Math.random()<bass*0.55;
+    if(bigHit){
+      logoText.style.transform=`scale(${s},${1+bass*0.045}) translate(${gx*2.2}px,${gy*1.5}px) skewX(${skew*1.8}deg) scaleX(${1+Math.random()*bass*0.18})`;
+      logoText.style.filter=`brightness(${1.6+bass}) contrast(${1.3+bass*0.5}) hue-rotate(${Math.random()*360}deg)`;
+    } else {
+      logoText.style.transform=`scale(${s},${1+bass*0.045}) translate(${gx*0.5}px,${gy*0.3}px) skewX(${skew*0.4}deg)`;
+      logoText.style.filter='';
     }
   } else {
-    logoText.style.textShadow = '';
+    logoText.style.textShadow='';
+    logoText.style.transform=`scale(${s},${1+bass*0.045})`;
+    logoText.style.filter='';
   }
-
-  // ── Liquid border
-  liquidT += 0.04 + bass * 0.12 + hihat * 0.06;
-  logoBox.style.clipPath = liquidPolygon(liquidT, bass, hihat);
-
-  // ── Border glow on beat
-  if(bass > 0.25){
-    logoBox.style.boxShadow =
+  if(bass>0.2){
+    logoBox.style.boxShadow=
       `0 0 ${20+bass*50}px rgba(255,0,255,${bass*0.55}),`+
       `0 0 ${40+bass*70}px rgba(0,255,255,${bass*0.35})`;
   } else {
-    logoBox.style.boxShadow = '';
+    logoBox.style.boxShadow='';
   }
 }
+
 
 // ─── MAIN LOOP ────────────────────────────────────────────
 resize();
@@ -479,6 +493,7 @@ function loop(){
   drawBlobs(bass);
   drawTunnel(bass);
   drawParticles(bass);
+  drawLavaBlobs(bass);
   drawBolts(bass);
   animateLogo(bass, hihat);
 
