@@ -267,117 +267,6 @@ function drawTunnel(bass){
     tctx.lineWidth=1+bass*2;tctx.stroke();
   }
 
-  // ── flip global rotation direction on beat ─────────────────
-  dirFlipCooldown=Math.max(0,dirFlipCooldown-1);
-  const bigHit=transient>0.042&&bass>0.20;
-  const smallHit=transient>0.018&&bass>0.10&&spokeCooldown===0;
-
-  if(bigHit && dirFlipCooldown===0){
-    globalRotDir*=-1;
-    dirFlipCooldown=45; // ~1.5s minimum between flips
-  }
-
-  // ── trigger lightning morph on beat ───────────────────────
-  spokeCooldown=Math.max(0,spokeCooldown-1);
-
-  if(bigHit){
-    spokeCooldown=5;
-    spokes.forEach(s=>{
-      s.morphTarget=1;
-      s.boltPts=makeBoltOffsets(12);
-      s.hue=(s.hue+60+Math.random()*80)%360;
-    });
-  } else if(smallHit){
-    spokeCooldown=8;
-    const count=3+Math.floor(bass*5);
-    const shuffled=[...Array(SPOKE_N).keys()].sort(()=>Math.random()-.5).slice(0,count);
-    shuffled.forEach(i=>{
-      const s=spokes[i];
-      s.morphTarget=.5+bass*.5;
-      s.boltPts=makeBoltOffsets(12);
-      s.hue=(s.hue+30+Math.random()*50)%360;
-    });
-  }
-
-  // target decays fast — quick zap back to straight
-  if(!bigHit){
-    spokes.forEach(s=>{
-      s.morphTarget=Math.max(0,s.morphTarget-.055);
-    });
-  }
-
-  // ── draw each spoke ────────────────────────────────────────
-  const STEPS=12;
-  spokes.forEach((s)=>{
-    const lerpSpd=s.morphT<s.morphTarget?0.30:0.25;
-    s.morphT+=(s.morphTarget-s.morphT)*lerpSpd;
-
-    // all spokes share global direction, each has own speed
-    s.angle+=globalRotDir*s.rotSpeed*(1+bass*.8);
-
-    if(s.boltPts.length<STEPS) s.boltPts=makeBoltOffsets(STEPS);
-
-    const perpX=-Math.sin(s.angle);
-    const perpY= Math.cos(s.angle);
-    const pts=[];
-    for(let i=0;i<=STEPS;i++){
-      const t=i/STEPS;
-      const r=maxR*t;
-      const sx=cx+Math.cos(s.angle)*r;
-      const sy=cy+Math.sin(s.angle)*r;
-      // jitter is zero at i=0 (center) — guaranteed to meet at cx,cy
-      const jOff=(s.boltPts[Math.min(i,STEPS-1)]||0)*s.morphT;
-      pts.push({x:sx+perpX*jOff, y:sy+perpY*jOff});
-    }
-
-    const m=s.morphT;
-    const brightness=55+m*30;
-    const alpha=.22+m*.65+bass*.15;
-    const lw=1+m*2.5+bass*1.5;
-
-    if(m>0.05){
-      tctx.shadowBlur=8+m*28+bass*15;
-      tctx.shadowColor=hsl(s.hue,100,70);
-    }
-
-    const g=tctx.createLinearGradient(cx,cy,cx+Math.cos(s.angle)*maxR,cy+Math.sin(s.angle)*maxR);
-    g.addColorStop(0, hsl(s.hue,100,brightness,alpha));
-    g.addColorStop(.5,hsl((s.hue+40)%360,100,brightness+10,alpha*.8));
-    g.addColorStop(1, hsl((s.hue+80)%360,100,brightness,0));
-    tctx.strokeStyle=g;
-    tctx.lineWidth=lw;
-    tctx.beginPath();
-    pts.forEach((p,i)=>i===0?tctx.moveTo(p.x,p.y):tctx.lineTo(p.x,p.y));
-    tctx.stroke();
-
-    if(m>0.15){
-      tctx.shadowBlur=0;
-      tctx.strokeStyle=`rgba(255,255,255,${m*.5})`;
-      tctx.lineWidth=.6;
-      tctx.beginPath();
-      pts.forEach((p,i)=>i===0?tctx.moveTo(p.x,p.y):tctx.lineTo(p.x,p.y));
-      tctx.stroke();
-    }
-
-    tctx.shadowBlur=0;
-  });
-
-  tt+=.011;
-}
-
-function drawTunnel(bass){
-  tctx.clearRect(0,0,W,H);
-  const maxR=Math.sqrt(cx*cx+cy*cy)*1.2;
-  const transient=bass-prevSmoothBass;
-
-  // ── concentric rings ───────────────────────────────────────
-  for(let i=40;i>=0;i--){
-    const p=i/40,r=maxR*p,depth=1-p,hue=(tt*30+i*15)%360;
-    tctx.beginPath();tctx.arc(cx,cy,r,0,Math.PI*2);
-    tctx.strokeStyle=hsl(hue,80,10+depth*20,.10+depth*.14+bass*.16);
-    tctx.lineWidth=1+bass*2;tctx.stroke();
-  }
-
   // ── trigger lightning morph on beat ───────────────────────
   spokeCooldown=Math.max(0,spokeCooldown-1);
   const bigHit=transient>0.042&&bass>0.20;
@@ -417,7 +306,7 @@ function drawTunnel(bass){
     s.morphT += (s.morphTarget - s.morphT) * lerpSpd;
 
     // rotate slowly — direction per spoke, speed up slightly on bass
-    s.angle+=s.rotDir*s.rotSpeed*(1+bass*.8);
+    s.angle+=globalRotDir*s.rotSpeed*(1+bass*.8);
 
     // ensure boltPts is populated
     if(s.boltPts.length<STEPS) s.boltPts=makeBoltOffsets(STEPS);
