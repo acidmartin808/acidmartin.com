@@ -464,45 +464,55 @@ function drawLightning(bass){
 }
 
 // ── AUDIO SPECTRUM WAVEFORM ───────────────────────────────────
-// One continuous waveform, full width of logo box
-// Left=green/cyan, Middle=blue/purple, Right=pink/magenta
-// Only bass frequencies drive it — quiet parts stay flat at baseline
+// Stacked full-width frequency layers — matches video reference:
+// Layer 0 (bottom/widest): pink/magenta — sub bass
+// Layer 1: red/orange — kick body  
+// Layer 2: purple/blue — bass
+// Layer 3: cyan/blue — upper bass
+// Layer 4 (top/narrowest): green — presence peaks
+// At rest = nearly flat line. On hits = tall smooth stacked peaks.
 
-const WAVE_PTS = 90;
-// Only read bass/sub bins — this is what makes sparse tall peaks
-const BASS_BIN_END = 0.18; // top 18% of spectrum = ~0-1.2kHz
-let waveBuf   = new Float32Array(WAVE_PTS); // smoothed display values
-let waveRaw   = new Float32Array(WAVE_PTS); // unsmoothed
-let specShakeX = 0, specShakeY = 0;
-let prevBassForShake = 0;
+const WAVE_PTS = 96;
+
+const LAYERS = [
+  // { binFrac: end of freq range, color, heightScale, smoothing }
+  // Each layer only reads its own freq slice
+  { buf: new Float32Array(WAVE_PTS), bf:0.06, color:'rgba(255,0,150,', hs:1.00, spd:0.82, glow:'255,0,150' },   // pink/magenta — sub
+  { buf: new Float32Array(WAVE_PTS), bf:0.11, color:'rgba(200,0,255,', hs:0.82, spd:0.78, glow:'180,0,255' },   // purple
+  { buf: new Float32Array(WAVE_PTS), bf:0.18, color:'rgba(30,80,255,',  hs:0.65, spd:0.74, glow:'30,80,255'  }, // blue
+  { buf: new Float32Array(WAVE_PTS), bf:0.28, color:'rgba(0,220,255,',  hs:0.50, spd:0.70, glow:'0,220,255'  }, // cyan
+  { buf: new Float32Array(WAVE_PTS), bf:0.42, color:'rgba(0,255,120,',  hs:0.36, spd:0.65, glow:'0,255,120'  }, // green — top
+];
+
+let specShakeX=0, specShakeY=0, prevBassForShake=0;
 
 function updateWaveData(){
   if(!audioReady) return;
-  const specEnd = Math.floor(bufferLength * BASS_BIN_END);
-  for(let i=0;i<WAVE_PTS;i++){
-    const bin = Math.floor((i/WAVE_PTS)*specEnd);
-    const raw = (freqData[bin]||0)/255;
-    // power curve: compress quiet parts to near zero, amplify loud peaks
-    const shaped = Math.pow(raw, 1.8);
-    waveRaw[i] = shaped;
-    // fast attack, medium release — snappy like reference
-    const spd = shaped > waveBuf[i] ? 0.35 : 0.78;
-    waveBuf[i] = waveBuf[i]*spd + shaped*(1-spd);
-  }
+  const totalBins = Math.floor(bufferLength * 0.55);
+  let prevEnd = 0;
+  LAYERS.forEach(l=>{
+    const binEnd = Math.floor(l.bf * totalBins);
+    const span   = Math.max(1, binEnd - prevEnd);
+    for(let i=0;i<WAVE_PTS;i++){
+      const bin = prevEnd + Math.floor((i/WAVE_PTS)*span);
+      const raw = (freqData[Math.min(bin, bufferLength-1)]||0)/255;
+      // hard power curve: quiet → nearly zero, loud → full
+      const shaped = Math.pow(raw, 2.2);
+      // fast attack, slow release = peaks snap up, fall gracefully
+      const up = shaped > l.buf[i];
+      l.buf[i] = l.buf[i]*(up ? l.spd*0.5 : l.spd) + shaped*(up ? 1-l.spd*0.5 : 1-l.spd);
+    }
+    prevEnd = binEnd;
+  });
 }
 
-// Smooth path using catmull-rom beziers
-function catmullRomPath(ctx, pts){
+function catmullPath(ctx, pts){
+  if(pts.length < 2) return;
   ctx.moveTo(pts[0].x, pts[0].y);
   for(let i=0;i<pts.length-1;i++){
-    const p0 = pts[Math.max(0,i-1)];
-    const p1 = pts[i];
-    const p2 = pts[i+1];
-    const p3 = pts[Math.min(pts.length-1,i+2)];
-    const cp1x = p1.x + (p2.x-p0.x)/6;
-    const cp1y = p1.y + (p2.y-p0.y)/6;
-    const cp2x = p2.x - (p3.x-p1.x)/6;
-    const cp2y = p2.y - (p3.y-p1.y)/6;
+    const p0=pts[Math.max(0,i-1)], p1=pts[i], p2=pts[i+1], p3=pts[Math.min(pts.length-1,i+2)];
+    const cp1x=p1.x+(p2.x-p0.x)/6, cp1y=p1.y+(p2.y-p0.y)/6;
+    const cp2x=p2.x-(p3.x-p1.x)/6, cp2y=p2.y-(p3.y-p1.y)/6;
     ctx.bezierCurveTo(cp1x,cp1y,cp2x,cp2y,p2.x,p2.y);
   }
 }
@@ -515,92 +525,68 @@ function drawSpectrumBorder(bass){
 
   const bx=boxRect.left, by=boxRect.top, bw=boxRect.width, bh=boxRect.height;
 
-  // shake on bass hit
-  const bt = bass - prevBassForShake;
-  if(bt > 0.05 && bass > 0.22){
-    specShakeX=(Math.random()-.5)*10*bass;
-    specShakeY=(Math.random()-.5)*7*bass;
-  }
+  // shake on transient
+  const bt=bass-prevBassForShake;
+  if(bt>0.05&&bass>0.22){ specShakeX=(Math.random()-.5)*11*bass; specShakeY=(Math.random()-.5)*8*bass; }
   specShakeX*=0.70; specShakeY*=0.70;
-  prevBassForShake = bass;
+  prevBassForShake=bass;
 
   sctx.save();
   sctx.translate(specShakeX, specShakeY);
 
-  const maxH = 55 + bass * 110; // tall spikes on drops, modest at rest
+  // max height scales hard with bass — at rest layers are very short
+  const maxH = 50 + bass * 120;
 
-  // Build point arrays for top and bottom
-  const topPts=[], botPts=[];
-  for(let i=0;i<WAVE_PTS;i++){
-    const x = bx + (i/(WAVE_PTS-1))*bw;
-    const h = waveBuf[i]*maxH;
-    topPts.push({x, y: by   - h});  // grows up from top edge
-    botPts.push({x, y: by+bh+ h});  // grows down from bottom edge (same data, mirrored)
-  }
-  // bottom is reversed so it mirrors properly
-  botPts.reverse();
-
-  // ── Draw function for one edge ─────────────────────────────
-  function drawEdge(pts, edgeY, dir /* -1=top +1=bot */){
-    // Tri-color horizontal gradient: green→blue→pink
-    const grad = sctx.createLinearGradient(bx, 0, bx+bw, 0);
-    if(dir < 0){
-      // TOP: green left, cyan-blue mid, pink right (matches ref img 2&3)
-      grad.addColorStop(0,   'rgba(0,255,120,0.95)');
-      grad.addColorStop(0.25,'rgba(0,230,255,0.9)');
-      grad.addColorStop(0.5, 'rgba(80,80,255,0.88)');
-      grad.addColorStop(0.75,'rgba(200,0,255,0.9)');
-      grad.addColorStop(1,   'rgba(255,0,160,0.95)');
-    } else {
-      // BOTTOM: same but slightly shifted hue
-      grad.addColorStop(0,   'rgba(255,0,160,0.95)');
-      grad.addColorStop(0.25,'rgba(200,0,255,0.9)');
-      grad.addColorStop(0.5, 'rgba(80,80,255,0.88)');
-      grad.addColorStop(0.75,'rgba(0,200,255,0.9)');
-      grad.addColorStop(1,   'rgba(0,255,120,0.95)');
+  // draw bottom layer first, top layer last (painter's algorithm)
+  function drawLayer(layer, edgeY, dir){
+    const pts=[];
+    for(let i=0;i<WAVE_PTS;i++){
+      pts.push({
+        x: bx + (i/(WAVE_PTS-1))*bw,
+        y: edgeY + dir * layer.buf[i] * maxH * layer.hs
+      });
     }
 
-    // vertical fade gradient for the fill
-    const fadeGrad = sctx.createLinearGradient(0, edgeY, 0, edgeY+dir*(maxH+20));
-    fadeGrad.addColorStop(0,   'rgba(0,0,0,0)');
-    fadeGrad.addColorStop(0.3, 'rgba(120,0,200,0.25)');
-    fadeGrad.addColorStop(1,   'rgba(200,0,200,0.0)');
+    // filled shape
+    const fillGrad = sctx.createLinearGradient(0, edgeY, 0, edgeY + dir*maxH*layer.hs);
+    fillGrad.addColorStop(0,   layer.color+'0.02)');
+    fillGrad.addColorStop(0.4, layer.color+'0.45)');
+    fillGrad.addColorStop(1,   layer.color+'0.75)');
 
-    // glow shadow
-    sctx.shadowBlur  = 20 + bass*35;
-    sctx.shadowColor = dir<0 ? `hsl(${200+bass*80},100%,65%)` : `hsl(${300+bass*60},100%,65%)`;
-
-    // filled area (fade only)
     sctx.beginPath();
     sctx.moveTo(bx, edgeY);
-    catmullRomPath(sctx, pts);
+    catmullPath(sctx, pts);
     sctx.lineTo(bx+bw, edgeY);
     sctx.closePath();
-    sctx.fillStyle = fadeGrad;
+    sctx.fillStyle = fillGrad;
     sctx.fill();
 
-    // glowing colored stroke — this is the visible waveform line
+    // glowing ridge stroke
+    sctx.shadowBlur  = 12 + bass*20;
+    sctx.shadowColor = `rgb(${layer.glow})`;
+    sctx.strokeStyle = layer.color+'0.95)';
+    sctx.lineWidth   = 2.5;
     sctx.beginPath();
-    catmullRomPath(sctx, pts);
-    sctx.strokeStyle = grad;
-    sctx.lineWidth   = 3;
+    catmullPath(sctx, pts);
     sctx.stroke();
-
-    // bright inner highlight line
-    sctx.shadowBlur = 6;
-    sctx.strokeStyle = dir<0 ? 'rgba(180,255,255,0.6)' : 'rgba(255,180,255,0.6)';
-    sctx.lineWidth = 1;
-    sctx.beginPath();
-    catmullRomPath(sctx, pts);
-    sctx.stroke();
+    sctx.shadowBlur=0;
   }
 
-  drawEdge(topPts, by,    -1);
-  drawEdge(botPts, by+bh,  1);
+  // TOP edge — layers drawn back-to-front (pink first, green last)
+  LAYERS.forEach(l => drawLayer(l, by, -1));
 
-  // subtle side lines
+  // BOTTOM edge — same but flipped (mirror)
+  LAYERS.forEach(l => drawLayer(l, by+bh, 1));
+
+  // flat baseline glow when quiet — the thin line at rest
+  sctx.shadowBlur=6; sctx.shadowColor='rgba(255,0,180,0.6)';
+  sctx.strokeStyle='rgba(255,0,150,0.35)'; sctx.lineWidth=1.5;
+  sctx.beginPath(); sctx.moveTo(bx,by);     sctx.lineTo(bx+bw,by);     sctx.stroke();
+  sctx.beginPath(); sctx.moveTo(bx,by+bh);  sctx.lineTo(bx+bw,by+bh);  sctx.stroke();
   sctx.shadowBlur=0;
-  sctx.strokeStyle='rgba(255,255,255,0.08)'; sctx.lineWidth=1;
+
+  // side lines
+  sctx.strokeStyle='rgba(255,255,255,0.07)'; sctx.lineWidth=1;
   sctx.beginPath(); sctx.moveTo(bx,by); sctx.lineTo(bx,by+bh); sctx.stroke();
   sctx.beginPath(); sctx.moveTo(bx+bw,by); sctx.lineTo(bx+bw,by+bh); sctx.stroke();
 
