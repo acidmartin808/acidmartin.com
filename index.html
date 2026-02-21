@@ -215,33 +215,32 @@ function drawPlasma(bass){
 
 // ── TUNNEL ─────────────────────────────────────────────────────
 let tt=0;
-// Pre-built spoke state — each spoke has its own bolt path that regenerates on beat
 const SPOKE_N=12;
+
+// Each spoke has a "calm" straight state and an "electrified" bolt state
+// morphT: 0=straight line, 1=full lightning — lerps between them on beat
 const spokes=Array.from({length:SPOKE_N},(_,i)=>({
-  angle:(i/SPOKE_N)*Math.PI*2,
+  baseAngle:(i/SPOKE_N)*Math.PI*2,  // resting angle
+  angle:(i/SPOKE_N)*Math.PI*2,      // current drawn angle
   hue:(i/SPOKE_N)*360,
-  pts:[], // electrified path points
-  life:0, // current bolt brightness (0=dark, 1=bright)
-  decay:.018+Math.random()*.02,
-  lastAngle:0,
+  morphT:0,          // 0=straight, 1=lightning
+  morphTarget:0,     // what morphT is lerping toward
+  boltPts:[],        // jagged offsets (fixed per activation, interpolated in)
+  life:1,            // overall opacity/presence (always visible as spoke)
+  boltDecay:.025+Math.random()*.02,
+  rotDir:Math.random()>.5?1:-1,
+  rotSpeed:.008+Math.random()*.006,
 }));
 let spokeCooldown=0;
 
-function makeBoltPts(cx,cy,angle,maxR){
-  // generate a jagged lightning path from center outward
-  const pts=[{x:cx,y:cy}];
-  const steps=8+Math.floor(Math.random()*6);
-  for(let i=1;i<=steps;i++){
+function makeBoltOffsets(steps){
+  // generate perpendicular jitter offsets for each point along the spoke
+  // these get multiplied by morphT so at morphT=0 the line is perfectly straight
+  return Array.from({length:steps},(_,i)=>{
     const t=i/steps;
-    const r=maxR*t;
-    const jitter=r*.18*(1-t*.5); // jitter shrinks near tip
-    const a=angle+(Math.random()-.5)*jitter/maxR*6;
-    pts.push({
-      x:cx+Math.cos(a)*r+(Math.random()-.5)*jitter,
-      y:cy+Math.sin(a)*r+(Math.random()-.5)*jitter,
-    });
-  }
-  return pts;
+    const mag=80*(1-t*.6); // more jitter near center, tapers to tip
+    return (Math.random()-.5)*mag;
+  });
 }
 
 function drawTunnel(bass){
@@ -249,71 +248,107 @@ function drawTunnel(bass){
   const maxR=Math.sqrt(cx*cx+cy*cy)*1.2;
   const transient=bass-prevSmoothBass;
 
-  // ── concentric rings — still there, subtle ─────────────────
+  // ── concentric rings ───────────────────────────────────────
   for(let i=40;i>=0;i--){
     const p=i/40,r=maxR*p,depth=1-p,hue=(tt*30+i*15)%360;
     tctx.beginPath();tctx.arc(cx,cy,r,0,Math.PI*2);
-    tctx.strokeStyle=hsl(hue,80,10+depth*20,.12+depth*.15+bass*.18);
+    tctx.strokeStyle=hsl(hue,80,10+depth*20,.10+depth*.14+bass*.16);
     tctx.lineWidth=1+bass*2;tctx.stroke();
   }
 
-  // ── electrified spokes — regenerate on bass hit ────────────
+  // ── trigger lightning morph on beat ───────────────────────
   spokeCooldown=Math.max(0,spokeCooldown-1);
-
-  // big hit: regen ALL spokes at once for full burst
-  const bigHit=transient>0.045&&bass>0.22;
-  // smaller hit: regen random subset
-  const smallHit=transient>0.02&&bass>0.12&&spokeCooldown===0;
+  const bigHit=transient>0.042&&bass>0.20;
+  const smallHit=transient>0.018&&bass>0.10&&spokeCooldown===0;
 
   if(bigHit){
-    spokeCooldown=4;
+    spokeCooldown=5;
     spokes.forEach(s=>{
-      s.angle=(s.lastAngle||s.angle)+tt*.2+bass*.4; // advance by beat
-      s.pts=makeBoltPts(cx,cy,s.angle,maxR);
-      s.life=1.0;
-      s.decay=.022+Math.random()*.018;
-      s.hue=(tt*20+Math.random()*60)%360;
+      s.morphTarget=1;
+      s.boltPts=makeBoltOffsets(12);
+      s.hue=(s.hue+60+Math.random()*80)%360; // color shift on hit
     });
   } else if(smallHit){
-    spokeCooldown=6;
-    // only regen 3-6 random spokes for syncopation
-    const count=3+Math.floor(bass*4);
-    const idxs=Array.from({length:SPOKE_N},(_,i)=>i).sort(()=>Math.random()-.5).slice(0,count);
-    idxs.forEach(i=>{
+    spokeCooldown=8;
+    const count=3+Math.floor(bass*5);
+    const shuffled=[...Array(SPOKE_N).keys()].sort(()=>Math.random()-.5).slice(0,count);
+    shuffled.forEach(i=>{
       const s=spokes[i];
-      s.angle=(i/SPOKE_N)*Math.PI*2+tt*.2+bass*.3+(Math.random()-.5)*.4;
-      s.pts=makeBoltPts(cx,cy,s.angle,maxR*(.5+Math.random()*.5));
-      s.life=.5+bass*.5;
-      s.decay=.03+Math.random()*.025;
-      s.hue=(tt*20+i*30+Math.random()*40)%360;
+      s.morphTarget=.5+bass*.5;
+      s.boltPts=makeBoltOffsets(12);
+      s.hue=(s.hue+30+Math.random()*50)%360;
     });
   }
 
-  // draw each spoke as a lightning bolt
-  spokes.forEach(s=>{
-    s.life=Math.max(0,s.life-s.decay);
-    if(s.life<0.01||s.pts.length<2) return;
-    const a=s.life;
+  // slowly return to straight when not triggered
+  if(!bigHit){
+    spokes.forEach(s=>{
+      s.morphTarget=Math.max(0,s.morphTarget-.008);
+    });
+  }
 
-    // outer glow
-    tctx.shadowBlur=16+bass*20;
-    tctx.shadowColor=hsl(s.hue,100,70);
-    tctx.strokeStyle=hsl(s.hue,100,75,a*.8);
-    tctx.lineWidth=1.5+bass*1.5;
-    tctx.globalAlpha=a;
+  // ── draw each spoke ────────────────────────────────────────
+  const STEPS=12;
+  spokes.forEach((s,si)=>{
+    // lerp morphT toward target — fast toward lightning, slow back to straight
+    const lerpSpd=s.morphT<s.morphTarget?0.18:0.04;
+    s.morphT+=(s.morphTarget-s.morphT)*lerpSpd;
+
+    // rotate slowly — direction per spoke, speed up slightly on bass
+    s.angle+=s.rotDir*s.rotSpeed*(1+bass*.8);
+
+    // ensure boltPts is populated
+    if(s.boltPts.length<STEPS) s.boltPts=makeBoltOffsets(STEPS);
+
+    // build interpolated path points
+    // perpendicular vector to the spoke direction
+    const perpX=-Math.sin(s.angle);
+    const perpY= Math.cos(s.angle);
+    const pts=[];
+    for(let i=0;i<=STEPS;i++){
+      const t=i/STEPS;
+      const r=maxR*t;
+      // straight line point
+      const sx=cx+Math.cos(s.angle)*r;
+      const sy=cy+Math.sin(s.angle)*r;
+      // jitter offset perpendicular to spoke, scaled by morphT
+      const jOff=(s.boltPts[Math.min(i,STEPS-1)]||0)*s.morphT;
+      pts.push({x:sx+perpX*jOff, y:sy+perpY*jOff});
+    }
+
+    const m=s.morphT;
+    const brightness=55+m*30;
+    const alpha=.22+m*.65+bass*.15;
+    const lw=1+m*2.5+bass*1.5;
+
+    // glow scales with morph amount
+    if(m>0.05){
+      tctx.shadowBlur=8+m*28+bass*15;
+      tctx.shadowColor=hsl(s.hue,100,70);
+    }
+
+    // colored spoke/bolt line
+    const g=tctx.createLinearGradient(cx,cy,cx+Math.cos(s.angle)*maxR,cy+Math.sin(s.angle)*maxR);
+    g.addColorStop(0, hsl(s.hue,100,brightness,alpha));
+    g.addColorStop(.5,hsl((s.hue+40)%360,100,brightness+10,alpha*.8));
+    g.addColorStop(1, hsl((s.hue+80)%360,100,brightness,0));
+    tctx.strokeStyle=g;
+    tctx.lineWidth=lw;
     tctx.beginPath();
-    s.pts.forEach((p,i)=>i===0?tctx.moveTo(p.x,p.y):tctx.lineTo(p.x,p.y));
+    pts.forEach((p,i)=>i===0?tctx.moveTo(p.x,p.y):tctx.lineTo(p.x,p.y));
     tctx.stroke();
 
-    // white core
-    tctx.shadowBlur=4;
-    tctx.strokeStyle=`rgba(255,255,255,${a*.6})`;
-    tctx.lineWidth=.5;
-    tctx.beginPath();
-    s.pts.forEach((p,i)=>i===0?tctx.moveTo(p.x,p.y):tctx.lineTo(p.x,p.y));
-    tctx.stroke();
+    // white core — only visible when morphed
+    if(m>0.15){
+      tctx.shadowBlur=0;
+      tctx.strokeStyle=`rgba(255,255,255,${m*.5})`;
+      tctx.lineWidth=.6;
+      tctx.beginPath();
+      pts.forEach((p,i)=>i===0?tctx.moveTo(p.x,p.y):tctx.lineTo(p.x,p.y));
+      tctx.stroke();
+    }
 
-    tctx.globalAlpha=1;tctx.shadowBlur=0;
+    tctx.shadowBlur=0;
   });
 
   tt+=.011;
