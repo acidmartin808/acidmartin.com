@@ -233,7 +233,8 @@ const SPOKE_N=12;
 // Global spin direction flips on beat — all spokes reverse together
 let globalRotDir=1;
 let dirFlipCooldown=0;
-let autoFlipTimer=0; // also flips on a timer so it's always visible
+let autoFlipTimer=0;
+let rotMomentum=1.0;  // multiplier — spikes on flip, decays back to 1
 
 const spokes=Array.from({length:SPOKE_N},(_,i)=>({
   baseAngle:(i/SPOKE_N)*Math.PI*2,
@@ -268,14 +269,17 @@ function drawTunnel(bass){
     tctx.lineWidth=1+bass*2;tctx.stroke();
   }
 
-  // ── flip rotation direction on beat OR every ~2s automatically ──
+  // ── violent direction flips ────────────────────────────────
   dirFlipCooldown=Math.max(0,dirFlipCooldown-1);
   autoFlipTimer++;
-  // flip on big bass hit (with cooldown so it doesn't flutter)
-  // OR auto-flip every ~120 frames (~2s) so it's always visible
-  if((bigHit && dirFlipCooldown===0) || autoFlipTimer>120){
+  // decay momentum back to 1 each frame
+  rotMomentum+=(1.0-rotMomentum)*0.035;
+
+  const shouldFlip=(bigHit&&dirFlipCooldown===0)||autoFlipTimer>55;
+  if(shouldFlip){
     globalRotDir*=-1;
-    dirFlipCooldown=50;
+    rotMomentum=4.5;   // violent speed spike on reversal
+    dirFlipCooldown=30;
     autoFlipTimer=0;
   }
 
@@ -318,7 +322,7 @@ function drawTunnel(bass){
     s.morphT += (s.morphTarget - s.morphT) * lerpSpd;
 
     // rotate slowly — direction per spoke, speed up slightly on bass
-    s.angle+=globalRotDir*s.rotSpeed*(1+bass*.8);
+    s.angle+=globalRotDir*s.rotSpeed*rotMomentum*(1+bass*.8);
 
     // ensure boltPts is populated
     if(s.boltPts.length<STEPS) s.boltPts=makeBoltOffsets(STEPS);
@@ -385,10 +389,10 @@ const orbitParticles=Array.from({length:ORBIT_N},(_,i)=>({
   vx:0, vy:0,
   r:2+Math.random()*2.2, hue:(i/ORBIT_N)*360,
   orbitR:28+Math.random()*80,
-  // slower orbit — felt better in original
   orbitSpeed:(Math.random()>.5?1:-1)*(.022+Math.random()*.028),
   orbitAngle:Math.random()*Math.PI*2,
   bounceVel:0, popScale:1,
+  trail:[], // position history for trailing effect
 }));
 
 // Gravitational floaters — drift freely, get pulled toward cursor,
@@ -502,6 +506,21 @@ function drawParticles(bass){
     p.vx*=0.82; p.vy*=0.82;
     if(p.x<0)p.x=W;if(p.x>W)p.x=0;if(p.y<0)p.y=H;if(p.y>H)p.y=0;
     p.hue=(p.hue+.28)%360;
+
+    // trail — push current pos, keep last 18 points
+    p.trail.push({x:p.x,y:p.y});
+    if(p.trail.length>18) p.trail.shift();
+
+    // draw trail — fading dots behind the orb
+    p.trail.forEach((pt,ti)=>{
+      const tf=ti/p.trail.length; // 0=oldest, 1=newest
+      const tr=p.r*(tf*0.7)*(1+bass*.6);
+      if(tr<0.3) return;
+      pctx.beginPath();
+      pctx.arc(pt.x,pt.y,tr,0,Math.PI*2);
+      pctx.fillStyle=hsl(p.hue,100,72,tf*0.45);
+      pctx.fill();
+    });
 
     const drawR=p.r*p.popScale*(1+bass*1.2);
     pctx.shadowBlur=10+bass*22;
