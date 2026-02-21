@@ -280,19 +280,19 @@ function drawTunnel(bass){
     });
   }
 
-  // slowly return to straight when not triggered
+  // target decays very fast — spokes only stay electric briefly
   if(!bigHit){
     spokes.forEach(s=>{
-      s.morphTarget=Math.max(0,s.morphTarget-.008);
+      s.morphTarget=Math.max(0,s.morphTarget-.055); // was .008, now 7x faster
     });
   }
 
   // ── draw each spoke ────────────────────────────────────────
   const STEPS=12;
   spokes.forEach((s,si)=>{
-    // lerp morphT toward target — fast toward lightning, slow back to straight
-    const lerpSpd=s.morphT<s.morphTarget?0.18:0.04;
-    s.morphT+=(s.morphTarget-s.morphT)*lerpSpd;
+    // snap fast toward lightning, snap fast back — equal speed = quick zap feel
+    const lerpSpd = s.morphT < s.morphTarget ? 0.30 : 0.25;
+    s.morphT += (s.morphTarget - s.morphT) * lerpSpd;
 
     // rotate slowly — direction per spoke, speed up slightly on bass
     s.angle+=s.rotDir*s.rotSpeed*(1+bass*.8);
