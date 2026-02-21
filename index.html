@@ -6,7 +6,7 @@
   <title>acidmartin.com</title>
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
-    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
     :root { --c1:#ff00ff; --c2:#00ffff; --c3:#ff6600; --c4:#00ff66; --c5:#6600ff; }
     html, body { width:100%; height:100%; overflow:hidden; background:#000; font-family:'Space Mono',monospace; }
     #blobCanvas     { position:fixed; inset:0; z-index:1; opacity:0.35; mix-blend-mode:screen; }
@@ -14,28 +14,62 @@
     #tunnelCanvas   { position:fixed; inset:0; z-index:3; }
     #particleCanvas { position:fixed; inset:0; z-index:4; }
     #lightningCanvas{ position:fixed; inset:0; z-index:8; pointer-events:none; }
+    #spectrumCanvas { position:fixed; inset:0; z-index:9; pointer-events:none; }
     body::after {
       content:''; position:fixed; inset:0;
       background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E");
       background-size:200px 200px; pointer-events:none; z-index:5; opacity:0.4; mix-blend-mode:overlay;
     }
     .stage { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; pointer-events:none; }
+
+    /* ── GLITCH LOGO ── */
     .glitch {
       font-size:clamp(3rem,10vw,8rem); font-weight:700; color:#fff;
       letter-spacing:0.05em; word-spacing:0.35em; text-transform:none;
-      position:relative; animation:flicker 8s infinite;
-      transition:transform 0.05s, text-shadow 0.05s;
+      position:relative;
+      animation:flicker 5s infinite;
+      transition:transform 0.03s, text-shadow 0.03s;
     }
     .glitch::before,.glitch::after { content:attr(data-text); position:absolute; inset:0; }
-    .glitch::before { color:var(--c1); clip-path:polygon(0 20%,100% 20%,100% 40%,0 40%); animation:glitch-top 3s infinite steps(2); mix-blend-mode:screen; }
-    .glitch::after  { color:var(--c2); clip-path:polygon(0 60%,100% 60%,100% 80%,0 80%); animation:glitch-bot 2.5s infinite steps(2); mix-blend-mode:screen; }
+    /* cyan slice — offsets controlled by JS on beat */
+    .glitch::before {
+      color:var(--c1);
+      clip-path:polygon(0 15%,100% 15%,100% 45%,0 45%);
+      animation:glitch-top 1.8s infinite steps(3);
+      mix-blend-mode:screen;
+    }
+    /* magenta slice */
+    .glitch::after {
+      color:var(--c2);
+      clip-path:polygon(0 55%,100% 55%,100% 85%,0 85%);
+      animation:glitch-bot 1.4s infinite steps(3);
+      mix-blend-mode:screen;
+    }
+    /* extra hard glitch slice via outline trick */
+    .glitch-extra {
+      position:absolute; inset:0;
+      color:var(--c4);
+      clip-path:polygon(0 0,100% 0,100% 18%,0 18%);
+      animation:glitch-extra 2.2s infinite steps(4);
+      mix-blend-mode:screen;
+      pointer-events:none;
+    }
+
     .sub { margin-top:1.5rem; font-size:clamp(0.7rem,2vw,1rem); letter-spacing:0.4em; text-transform:uppercase; color:rgba(255,255,255,0.5); animation:pulse-sub 4s ease-in-out infinite; }
     .sub::before { content:'\25b6 '; color:var(--c3); animation:blink 1s step-end infinite; }
     .scanline { position:fixed; inset:0; background:repeating-linear-gradient(to bottom,transparent 0px,transparent 3px,rgba(0,0,0,0.08) 3px,rgba(0,0,0,0.08) 4px); pointer-events:none; z-index:6; }
     .vignette  { position:fixed; inset:0; background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,0.85) 100%); pointer-events:none; z-index:7; }
-    .rgb-border { position:relative; padding:2rem 4rem; border:1px solid rgba(255,255,255,0.08); animation:border-pulse 4s ease-in-out infinite; }
-    .rgb-border::before { content:''; position:absolute; inset:-2px; background:linear-gradient(90deg,var(--c1),var(--c2),var(--c3),var(--c4),var(--c5),var(--c1)); background-size:300% 100%; border-radius:2px; z-index:-1; animation:rainbow-border 3s linear infinite; opacity:0.6; }
-    .rgb-border::after  { content:''; position:absolute; inset:0; background:rgba(0,0,0,0.92); z-index:-1; }
+
+    /* Static side borders only — top/bottom handled by canvas */
+    .rgb-border {
+      position:relative; padding:2rem 4rem;
+      /* left+right border via box-shadow trick so we can keep top/bottom open for canvas */
+      border-left: 1px solid rgba(255,255,255,0.15);
+      border-right: 1px solid rgba(255,255,255,0.15);
+      border-top: none; border-bottom: none;
+    }
+    .rgb-border::after { content:''; position:absolute; inset:0; background:rgba(0,0,0,0.88); z-index:-1; }
+
     #muteBtn {
       position:fixed; bottom:24px; right:24px; z-index:999;
       width:40px; height:40px; background:rgba(0,0,0,0.6);
@@ -45,6 +79,7 @@
       transition:border-color 0.3s,color 0.3s,box-shadow 0.3s; backdrop-filter:blur(8px);
     }
     #muteBtn:hover { border-color:rgba(0,255,255,0.5); color:#fff; box-shadow:0 0 12px rgba(0,255,255,0.3); }
+
     #startOverlay {
       position:fixed; inset:0; z-index:9999;
       display:flex; align-items:center; justify-content:center;
@@ -52,14 +87,36 @@
     }
     #startOverlay span { font-family:'Space Mono',monospace; font-size:clamp(0.7rem,1.5vw,0.9rem); letter-spacing:0.35em; text-transform:uppercase; color:rgba(255,255,255,0.35); }
     #startOverlay .pulse-ring { width:80px; height:80px; border:2px solid rgba(0,255,255,0.6); border-radius:50%; display:flex; align-items:center; justify-content:center; color:rgba(0,255,255,0.8); font-size:28px; animation:ring-pulse 2s ease-in-out infinite; }
+
     @keyframes ring-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(0,255,255,0.3)} 50%{box-shadow:0 0 0 20px rgba(0,255,255,0)} }
-    @keyframes glitch-top { 0%{transform:translate(-3px,0)} 25%{transform:translate(3px,0)} 50%{transform:translate(-1px,0) skewX(5deg)} 75%{transform:translate(2px,0)} 100%{transform:translate(-3px,0)} }
-    @keyframes glitch-bot { 0%{transform:translate(3px,0)} 33%{transform:translate(-3px,0) skewX(-3deg)} 66%{transform:translate(1px,0)} 100%{transform:translate(3px,0)} }
-    @keyframes flicker { 0%,95%,100%{opacity:1} 96%{opacity:.4} 97%{opacity:1} 98%{opacity:.2} 99%{opacity:1} }
+
+    /* ── MORE AGGRESSIVE GLITCH ANIMATIONS ── */
+    @keyframes glitch-top {
+      0%  {transform:translate(-6px,0) skewX(0deg)}
+      20% {transform:translate(6px,0)  skewX(-4deg)}
+      40% {transform:translate(-2px,0) skewX(2deg)}
+      60% {transform:translate(8px,-2px)}
+      80% {transform:translate(-4px,0) skewX(3deg)}
+      100%{transform:translate(-6px,0)}
+    }
+    @keyframes glitch-bot {
+      0%  {transform:translate(6px,0)}
+      25% {transform:translate(-8px,0) skewX(3deg)}
+      50% {transform:translate(3px,2px) skewX(-2deg)}
+      75% {transform:translate(-2px,0)}
+      100%{transform:translate(6px,0)}
+    }
+    @keyframes glitch-extra {
+      0%  {transform:translate(0,0); opacity:0.8}
+      15% {transform:translate(-10px,0); clip-path:polygon(0 0,100% 0,100% 25%,0 25%); opacity:1}
+      30% {transform:translate(10px,0); clip-path:polygon(0 70%,100% 70%,100% 100%,0 100%); opacity:0.6}
+      50% {transform:translate(-4px,3px); opacity:0}
+      70% {transform:translate(5px,0); clip-path:polygon(0 40%,100% 40%,100% 60%,0 60%); opacity:0.9}
+      100%{transform:translate(0,0); opacity:0}
+    }
+    @keyframes flicker { 0%,90%,100%{opacity:1} 91%{opacity:.3} 92%{opacity:1} 94%{opacity:.1} 96%{opacity:1} 98%{opacity:.5} 99%{opacity:1} }
     @keyframes pulse-sub { 0%,100%{opacity:.5} 50%{opacity:1;color:rgba(255,255,255,.9);letter-spacing:.5em} }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-    @keyframes rainbow-border { 0%{background-position:0% 50%} 100%{background-position:300% 50%} }
-    @keyframes border-pulse { 0%,100%{box-shadow:0 0 0 transparent} 50%{box-shadow:0 0 30px rgba(255,0,255,.15),0 0 60px rgba(0,255,255,.1)} }
   </style>
 </head>
 <body>
@@ -71,6 +128,7 @@
 
 <audio id="bgAudio" loop>
   <source src="song.wav" type="audio/wav">
+  <source src="song.mp3" type="audio/mpeg">
 </audio>
 
 <canvas id="blobCanvas"></canvas>
@@ -78,11 +136,15 @@
 <canvas id="tunnelCanvas"></canvas>
 <canvas id="particleCanvas"></canvas>
 <canvas id="lightningCanvas"></canvas>
+<canvas id="spectrumCanvas"></canvas>
 <div class="scanline"></div>
 <div class="vignette"></div>
 <div class="stage">
   <div class="rgb-border" id="logoBox">
-    <div class="glitch" data-text="Acid Martin" id="logoText">Acid Martin</div>
+    <div class="glitch" data-text="Acid Martin" id="logoText">
+      Acid Martin
+      <span class="glitch-extra" aria-hidden="true">Acid Martin</span>
+    </div>
     <div class="sub">something is coming</div>
   </div>
 </div>
@@ -94,8 +156,8 @@ const audio        = document.getElementById('bgAudio');
 const muteBtn      = document.getElementById('muteBtn');
 const startOverlay = document.getElementById('startOverlay');
 
-let audioCtx, analyser, dataArray, bufferLength;
-let audioReady = false, smoothBass = 0;
+let audioCtx, analyser, freqData, bufferLength;
+let audioReady = false, smoothBass = 0, prevBass = 0;
 
 function initAudio() {
   if (audioReady) return;
@@ -103,9 +165,9 @@ function initAudio() {
   const src = audioCtx.createMediaElementSource(audio);
   analyser  = audioCtx.createAnalyser();
   analyser.fftSize = 2048;
-  analyser.smoothingTimeConstant = 0.82;
+  analyser.smoothingTimeConstant = 0.75;
   bufferLength = analyser.frequencyBinCount;
-  dataArray    = new Uint8Array(bufferLength);
+  freqData     = new Uint8Array(bufferLength);
   src.connect(analyser);
   analyser.connect(audioCtx.destination);
   audioReady = true;
@@ -113,7 +175,7 @@ function initAudio() {
 
 startOverlay.addEventListener('click', () => {
   initAudio();
-  audio.play().catch(() => {});
+  audio.play().catch(e => console.warn('play failed:', e));
   startOverlay.style.transition = 'opacity 0.8s';
   startOverlay.style.opacity = '0';
   setTimeout(() => { startOverlay.style.display = 'none'; }, 800);
@@ -126,15 +188,15 @@ muteBtn.addEventListener('click', () => {
 
 function getBassEnergy() {
   if (!audioReady) return 0;
-  analyser.getByteFrequencyData(dataArray);
+  analyser.getByteFrequencyData(freqData);
   const binHz   = (audioCtx.sampleRate / 2) / bufferLength;
   const bassEnd = Math.floor(250 / binHz);
   let sum = 0;
-  for (let i = 1; i <= bassEnd; i++) sum += dataArray[i];
+  for (let i = 1; i <= bassEnd; i++) sum += freqData[i];
   return sum / (bassEnd * 255);
 }
 
-// ── CANVAS ───────────────────────────────────────────────────
+// ── CANVAS SETUP ─────────────────────────────────────────────
 let W, H, cx, cy;
 const mouse = { x: -9999, y: -9999 };
 
@@ -143,28 +205,34 @@ const plasmaCanvas    = document.getElementById('plasmaCanvas');
 const tunnelCanvas    = document.getElementById('tunnelCanvas');
 const particleCanvas  = document.getElementById('particleCanvas');
 const lightningCanvas = document.getElementById('lightningCanvas');
+const spectrumCanvas  = document.getElementById('spectrumCanvas');
 const bctx = blobCanvas.getContext('2d');
 const plctx = plasmaCanvas.getContext('2d');
 const tctx  = tunnelCanvas.getContext('2d');
 const pctx  = particleCanvas.getContext('2d');
 const lctx  = lightningCanvas.getContext('2d');
+const sctx  = spectrumCanvas.getContext('2d');
 
 let plasmaOff, plasmaOffCtx;
 
+// Logo box rect — updated each frame
+let boxRect = null;
+
 function resize() {
   W = window.innerWidth; H = window.innerHeight; cx = W/2; cy = H/2;
-  [blobCanvas,plasmaCanvas,tunnelCanvas,particleCanvas,lightningCanvas].forEach(c=>{c.width=W;c.height=H;});
+  [blobCanvas,plasmaCanvas,tunnelCanvas,particleCanvas,lightningCanvas,spectrumCanvas]
+    .forEach(c => { c.width = W; c.height = H; });
   plasmaOff = document.createElement('canvas');
   plasmaOff.width = W>>2; plasmaOff.height = H>>2;
   plasmaOffCtx = plasmaOff.getContext('2d');
-  updateLogoCenter();
+  updateLogoBox();
 }
 window.addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
 window.addEventListener('touchmove', e => { mouse.x=e.touches[0].clientX; mouse.y=e.touches[0].clientY; }, {passive:true});
 window.addEventListener('resize', resize);
 function hsl(h,s,l,a=1){ return `hsla(${h},${s}%,${l}%,${a})`; }
 
-// ── BLOBS ────────────────────────────────────────────────────
+// ── BLOBS ─────────────────────────────────────────────────────
 const blobs = Array.from({length:7},(_,i)=>({
   x:Math.random()*innerWidth, y:Math.random()*innerHeight,
   vx:(Math.random()-.5)*.4, vy:(Math.random()-.5)*.4,
@@ -183,16 +251,19 @@ function drawBlobs(bass){
     for(let i=0;i<=12;i++){
       const a=(i/12)*Math.PI*2;
       const m=b.r*exp*(.72+.28*Math.sin(b.phase+i*1.1+Math.cos(b.phase*.7+i)));
-      i===0?bctx.moveTo(b.x+Math.cos(a)*m,b.y+Math.sin(a)*m):bctx.lineTo(b.x+Math.cos(a)*m,b.y+Math.sin(a)*m);
+      i===0?bctx.moveTo(b.x+Math.cos(a)*m,b.y+Math.sin(a)*m)
+           :bctx.lineTo(b.x+Math.cos(a)*m,b.y+Math.sin(a)*m);
     }
     bctx.closePath();
     const g=bctx.createRadialGradient(b.x,b.y,0,b.x,b.y,b.r*exp);
-    g.addColorStop(0,hsl(b.hue,100,65,.9)); g.addColorStop(.5,hsl((b.hue+40)%360,100,50,.5)); g.addColorStop(1,hsl((b.hue+80)%360,100,40,0));
+    g.addColorStop(0,hsl(b.hue,100,65,.9));
+    g.addColorStop(.5,hsl((b.hue+40)%360,100,50,.5));
+    g.addColorStop(1,hsl((b.hue+80)%360,100,40,0));
     bctx.fillStyle=g; bctx.filter='blur(38px)'; bctx.fill(); bctx.filter='none';
   });
 }
 
-// ── PLASMA ───────────────────────────────────────────────────
+// ── PLASMA ────────────────────────────────────────────────────
 let pt=0;
 function drawPlasma(bass){
   const iw=plasmaOff.width, ih=plasmaOff.height;
@@ -200,20 +271,25 @@ function drawPlasma(bass){
   for(let y=0;y<ih;y++){
     for(let x=0;x<iw;x++){
       const nx=x/iw,ny=y/ih;
-      const v=(Math.sin(nx*10+t)+Math.sin(ny*10+t*1.3)+Math.sin((nx+ny)*8+t*.7)+Math.sin(Math.sqrt((nx-.5)**2+(ny-.5)**2)*20-t*1.5+bass*5))/4;
+      const v=(Math.sin(nx*10+t)+Math.sin(ny*10+t*1.3)+
+               Math.sin((nx+ny)*8+t*.7)+
+               Math.sin(Math.sqrt((nx-.5)**2+(ny-.5)**2)*20-t*1.5+bass*5))/4;
       const hue=(((v+1)/2)*360+t*30)%360, h6=hue/60, c=(1-Math.abs(2*.45-1)), xc=c*(1-Math.abs(h6%2-1));
       let r=0,g=0,b=0;
-      if(h6<1){r=c;g=xc;}else if(h6<2){r=xc;g=c;}else if(h6<3){g=c;b=xc;}else if(h6<4){g=xc;b=c;}else if(h6<5){r=xc;b=c;}else{r=c;b=xc;}
+      if(h6<1){r=c;g=xc;}else if(h6<2){r=xc;g=c;}
+      else if(h6<3){g=c;b=xc;}else if(h6<4){g=xc;b=c;}
+      else if(h6<5){r=xc;b=c;}else{r=c;b=xc;}
       const m=.45-c/2, idx=(y*iw+x)*4;
       d[idx]=(r+m)*255|0; d[idx+1]=(g+m)*255|0; d[idx+2]=(b+m)*255|0; d[idx+3]=200;
     }
   }
   plasmaOffCtx.putImageData(img,0,0);
-  plctx.clearRect(0,0,W,H); plctx.filter='blur(3px)'; plctx.drawImage(plasmaOff,0,0,W,H); plctx.filter='none';
+  plctx.clearRect(0,0,W,H); plctx.filter='blur(3px)';
+  plctx.drawImage(plasmaOff,0,0,W,H); plctx.filter='none';
   pt+=.014+bass*.05;
 }
 
-// ── TUNNEL ───────────────────────────────────────────────────
+// ── TUNNEL ────────────────────────────────────────────────────
 let tt=0;
 function drawTunnel(bass){
   tctx.clearRect(0,0,W,H);
@@ -221,19 +297,22 @@ function drawTunnel(bass){
   for(let i=44;i>=0;i--){
     const p=i/44, r=maxR*p, depth=1-p, hue=(tt*30+i*15)%360;
     tctx.beginPath(); tctx.arc(cx,cy,r,0,Math.PI*2);
-    tctx.strokeStyle=hsl(hue,80,10+depth*20,.15+depth*.2+bass*.2); tctx.lineWidth=1.5+bass*3; tctx.stroke();
+    tctx.strokeStyle=hsl(hue,80,10+depth*20,.15+depth*.2+bass*.2);
+    tctx.lineWidth=1.5+bass*3; tctx.stroke();
   }
   for(let s=0;s<14;s++){
     const angle=(s/14)*Math.PI*2+tt*.2+bass*.5, hue=(tt*20+s*30)%360;
-    tctx.beginPath(); tctx.moveTo(cx,cy); tctx.lineTo(cx+Math.cos(angle)*maxR,cy+Math.sin(angle)*maxR);
+    tctx.beginPath(); tctx.moveTo(cx,cy);
+    tctx.lineTo(cx+Math.cos(angle)*maxR,cy+Math.sin(angle)*maxR);
     const g=tctx.createLinearGradient(cx,cy,cx+Math.cos(angle)*maxR,cy+Math.sin(angle)*maxR);
-    g.addColorStop(0,hsl(hue,100,60,.5+bass*.4)); g.addColorStop(1,hsl((hue+180)%360,100,60,0));
+    g.addColorStop(0,hsl(hue,100,60,.5+bass*.4));
+    g.addColorStop(1,hsl((hue+180)%360,100,60,0));
     tctx.strokeStyle=g; tctx.lineWidth=1+bass*2; tctx.stroke();
   }
   tt+=.012;
 }
 
-// ── PARTICLES (orbit + attract, NO cursor rings) ─────────────
+// ── PARTICLES ─────────────────────────────────────────────────
 const N=160, CDIST=140, MDIST=220;
 const particles=Array.from({length:N},(_,i)=>({
   x:Math.random()*innerWidth, y:Math.random()*innerHeight,
@@ -244,7 +323,6 @@ const particles=Array.from({length:N},(_,i)=>({
   orbitSpeed:(Math.random()-.5)*.05,
   orbitAngle:Math.random()*Math.PI*2,
 }));
-
 function drawParticles(bass){
   pctx.clearRect(0,0,W,H);
   particles.forEach(p=>{
@@ -280,91 +358,249 @@ function drawParticles(bass){
   }
 }
 
-// ── LIGHTNING ────────────────────────────────────────────────
+// ── LIGHTNING — BIG, SLOW DECAY ───────────────────────────────
 const logoEl=document.getElementById('logoBox');
 let logoCenter={x:innerWidth/2, y:innerHeight/2};
-function updateLogoCenter(){
+function updateLogoBox(){
   const r=logoEl.getBoundingClientRect();
   logoCenter={x:r.left+r.width/2, y:r.top+r.height/2};
+  boxRect = r;
 }
-setTimeout(updateLogoCenter,200);
+setTimeout(updateLogoBox,200);
 
 function lightningSegment(ctx,x1,y1,x2,y2,rough,depth){
   if(depth<=0||rough<1){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();return;}
   const mx=(x1+x2)/2+(Math.random()-.5)*rough, my=(y1+y2)/2+(Math.random()-.5)*rough;
   lightningSegment(ctx,x1,y1,mx,my,rough*.55,depth-1);
   lightningSegment(ctx,mx,my,x2,y2,rough*.55,depth-1);
-  if(Math.random()<.35&&depth>1){
-    const ba=Math.atan2(y2-y1,x2-x1)+(Math.random()-.5)*1.2, saved=ctx.globalAlpha;
-    ctx.globalAlpha=saved*.45;
-    lightningSegment(ctx,mx,my,mx+Math.cos(ba)*rough*.7,my+Math.sin(ba)*rough*.7,rough*.45,depth-2);
+  if(Math.random()<.45&&depth>1){
+    const ba=Math.atan2(y2-y1,x2-x1)+(Math.random()-.5)*1.5, saved=ctx.globalAlpha;
+    ctx.globalAlpha=saved*.5;
+    lightningSegment(ctx,mx,my,mx+Math.cos(ba)*rough*.9,my+Math.sin(ba)*rough*.9,rough*.5,depth-2);
     ctx.globalAlpha=saved;
   }
 }
 
 let bolts=[];
 const BOLT_HUES=[180,285,55,320,120];
+let prevSmoothBass = 0;
+
 function spawnBolts(bass){
-  if(!audioReady||bass<.08)return;
-  const count=Math.floor(bass*10);
+  if(!audioReady) return;
+  // detect transient — spawn on rising edge
+  const transient = bass - prevSmoothBass;
+  const isBigHit = bass > 0.25 && transient > 0.04;
+  if(!isBigHit && bass < 0.15) return;
+
+  const count = isBigHit
+    ? 3 + Math.floor(bass * 14)   // big burst on hit
+    : Math.floor(bass * 4);       // trickle between beats
+
   for(let i=0;i<count;i++){
-    const angle=Math.random()*Math.PI*2, len=80+Math.random()*Math.max(W,H)*.6*bass;
+    const angle=Math.random()*Math.PI*2;
+    // long bolts — reach across most of the screen
+    const len = isBigHit
+      ? Math.max(W,H)*.4 + Math.random()*Math.max(W,H)*.55
+      : 80 + Math.random()*Math.max(W,H)*.35;
     bolts.push({
-      x1:logoCenter.x,y1:logoCenter.y,
-      x2:logoCenter.x+Math.cos(angle)*len, y2:logoCenter.y+Math.sin(angle)*len,
-      life:1, decay:.07+Math.random()*.15,
+      x1:logoCenter.x, y1:logoCenter.y,
+      x2:logoCenter.x+Math.cos(angle)*len,
+      y2:logoCenter.y+Math.sin(angle)*len,
+      life:1,
+      // SLOW decay — linger visibly
+      decay: isBigHit ? .018+Math.random()*.022 : .04+Math.random()*.06,
       hue:BOLT_HUES[Math.floor(Math.random()*BOLT_HUES.length)],
-      roughness:35+Math.random()*90*bass, depth:4+Math.floor(bass*4),
+      roughness: isBigHit ? 60+Math.random()*120 : 30+Math.random()*60,
+      depth: isBigHit ? 6 + Math.floor(bass*3) : 4,
+      thick: isBigHit,
     });
   }
 }
+
 function drawLightning(bass){
   lctx.clearRect(0,0,W,H);
   spawnBolts(bass);
-  bolts=bolts.filter(b=>b.life>0.01);
+  bolts=bolts.filter(b=>b.life>0.005);
   bolts.forEach(b=>{
     b.life-=b.decay; if(b.life<=0)return;
     const a=Math.max(0,b.life);
     lctx.globalAlpha=a;
-    lctx.shadowBlur=18+bass*20; lctx.shadowColor=hsl(b.hue,100,70);
-    lctx.strokeStyle=hsl(b.hue,100,80,a*.65); lctx.lineWidth=1.5;
-    lightningSegment(lctx,b.x1,b.y1,b.x2,b.y2,b.roughness,b.depth);
-    lctx.shadowBlur=4; lctx.strokeStyle=`rgba(255,255,255,${a*.85})`; lctx.lineWidth=.6;
-    lightningSegment(lctx,b.x1,b.y1,b.x2,b.y2,b.roughness*.4,Math.max(2,b.depth-2));
+
+    if(b.thick){
+      // outer fat glow
+      lctx.shadowBlur=30+bass*40; lctx.shadowColor=hsl(b.hue,100,70);
+      lctx.strokeStyle=hsl(b.hue,100,75,a*.7); lctx.lineWidth=3;
+      lightningSegment(lctx,b.x1,b.y1,b.x2,b.y2,b.roughness,b.depth);
+      // mid
+      lctx.shadowBlur=12; lctx.lineWidth=1.5;
+      lctx.strokeStyle=hsl(b.hue,100,90,a*.8);
+      lightningSegment(lctx,b.x1,b.y1,b.x2,b.y2,b.roughness*.6,b.depth-1);
+    } else {
+      lctx.shadowBlur=14+bass*16; lctx.shadowColor=hsl(b.hue,100,70);
+      lctx.strokeStyle=hsl(b.hue,100,80,a*.6); lctx.lineWidth=1.5;
+      lightningSegment(lctx,b.x1,b.y1,b.x2,b.y2,b.roughness,b.depth);
+    }
+    // white core on all bolts
+    lctx.shadowBlur=4; lctx.strokeStyle=`rgba(255,255,255,${a*.9})`; lctx.lineWidth=.6;
+    lightningSegment(lctx,b.x1,b.y1,b.x2,b.y2,b.roughness*.35,Math.max(2,b.depth-2));
     lctx.globalAlpha=1; lctx.shadowBlur=0;
   });
-  if(bass>.3){
-    const g=lctx.createRadialGradient(logoCenter.x,logoCenter.y,0,logoCenter.x,logoCenter.y,140*bass);
-    g.addColorStop(0,`rgba(255,255,255,${Math.min(bass*.55,.4)})`);
-    g.addColorStop(.3,`rgba(0,255,255,${bass*.28})`);
-    g.addColorStop(.7,`rgba(255,0,255,${bass*.1})`);
-    g.addColorStop(1,'rgba(0,0,0,0)');
-    lctx.fillStyle=g; lctx.beginPath(); lctx.arc(logoCenter.x,logoCenter.y,140*bass,0,Math.PI*2); lctx.fill();
+
+  // Radial burst at logo center on big bass
+  if(bass>.28){
+    const burst=lctx.createRadialGradient(logoCenter.x,logoCenter.y,0,logoCenter.x,logoCenter.y,180*bass);
+    burst.addColorStop(0,`rgba(255,255,255,${Math.min(bass*.7,.5)})`);
+    burst.addColorStop(.25,`rgba(0,255,255,${bass*.35})`);
+    burst.addColorStop(.6,`rgba(255,0,255,${bass*.15})`);
+    burst.addColorStop(1,'rgba(0,0,0,0)');
+    lctx.fillStyle=burst;
+    lctx.beginPath(); lctx.arc(logoCenter.x,logoCenter.y,180*bass,0,Math.PI*2); lctx.fill();
   }
 }
 
-// ── LOGO PULSE ───────────────────────────────────────────────
-const logoText=document.getElementById('logoText');
-function animateLogo(bass){
-  const s=1+bass*.09;
-  logoText.style.transform=`scale(${s},${1+bass*.045})`;
-  logoText.style.textShadow=bass>.25
-    ? `0 0 ${15+bass*50}px rgba(255,255,255,${bass*.9}),0 0 ${50+bass*80}px rgba(0,255,255,${bass*.6}),0 0 ${80+bass*100}px rgba(255,0,255,${bass*.3})`
-    : '';
+// ── AUDIO SPECTRUM BORDER (top+bottom of logo box) ────────────
+// Smooth per-bar values
+let barSmooth = null;
+let specHue = 0;
+
+function drawSpectrumBorder(bass){
+  sctx.clearRect(0,0,W,H);
+  if(!boxRect || !audioReady) return;
+
+  const bx = boxRect.left, by = boxRect.top;
+  const bw = boxRect.width, bh = boxRect.height;
+
+  // Number of bars scales with box width
+  const numBars = Math.floor(bw / 4);
+  if(!barSmooth || barSmooth.length !== numBars*2){
+    barSmooth = new Float32Array(numBars*2);
+  }
+
+  // Get full frequency spectrum
+  const fftLen = bufferLength; // 1024
+  // Map bars to lower 60% of spectrum (musical range)
+  const specEnd = Math.floor(fftLen * 0.55);
+  const maxBarH = 44 + bass * 60; // max bar height in px
+
+  specHue = (specHue + 0.4 + bass * 1.5) % 360;
+
+  // ── TOP EDGE (bars grow upward from top of box) ───────────
+  for(let i=0;i<numBars;i++){
+    const binIdx = Math.floor((i / numBars) * specEnd);
+    const raw = (freqData[binIdx] || 0) / 255;
+    // smooth each bar independently
+    barSmooth[i] = barSmooth[i] * 0.72 + raw * 0.28;
+    const barH = barSmooth[i] * maxBarH;
+    if(barH < 0.5) continue;
+
+    const barX = bx + (i / numBars) * bw;
+    const barW = (bw / numBars) - 1;
+    const barY = by - barH; // grow upward
+
+    const hue = (specHue + (i / numBars) * 120) % 360;
+    const g = sctx.createLinearGradient(barX, by, barX, barY);
+    g.addColorStop(0, hsl(hue, 100, 55, 0.3));
+    g.addColorStop(1, hsl((hue+40)%360, 100, 80, 0.95));
+    sctx.fillStyle = g;
+    sctx.shadowBlur = 8 + bass * 12;
+    sctx.shadowColor = hsl(hue, 100, 70);
+    sctx.fillRect(barX, barY, barW, barH);
+  }
+
+  // ── BOTTOM EDGE (bars grow downward, reversed & phase-shifted) ─
+  const phaseShift = Math.floor(numBars * 0.3); // offset bins = syncopation
+  const bottomHueOffset = 180; // complementary colour
+  for(let i=0;i<numBars;i++){
+    // reversed + phase-shifted bin map
+    const mirrorI = numBars - 1 - i;
+    const binIdx  = Math.floor(((mirrorI + phaseShift) % numBars / numBars) * specEnd);
+    const raw = (freqData[binIdx] || 0) / 255;
+    barSmooth[numBars+i] = barSmooth[numBars+i] * 0.72 + raw * 0.28;
+    const barH = barSmooth[numBars+i] * maxBarH;
+    if(barH < 0.5) continue;
+
+    const barX = bx + (i / numBars) * bw;
+    const barW = (bw / numBars) - 1;
+    const barYStart = by + bh; // bottom of box
+    const hue = (specHue + bottomHueOffset + (i / numBars) * 120) % 360;
+
+    const g = sctx.createLinearGradient(barX, barYStart, barX, barYStart + barH);
+    g.addColorStop(0, hsl(hue, 100, 55, 0.3));
+    g.addColorStop(1, hsl((hue+40)%360, 100, 80, 0.95));
+    sctx.fillStyle = g;
+    sctx.shadowBlur = 8 + bass * 12;
+    sctx.shadowColor = hsl(hue, 100, 70);
+    sctx.fillRect(barX, barYStart, barW, barH);
+  }
+
+  sctx.shadowBlur = 0;
+
+  // Draw the static side lines (white thin glow)
+  sctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  sctx.lineWidth = 1;
+  // left side
+  sctx.beginPath(); sctx.moveTo(bx, by); sctx.lineTo(bx, by+bh); sctx.stroke();
+  // right side
+  sctx.beginPath(); sctx.moveTo(bx+bw, by); sctx.lineTo(bx+bw, by+bh); sctx.stroke();
 }
 
-// ── MAIN LOOP ────────────────────────────────────────────────
+// ── LOGO GLITCH — JS-DRIVEN BEAT GLITCH ──────────────────────
+const logoText  = document.getElementById('logoText');
+const glitchEl  = logoText; // .glitch div
+let glitchTimer = 0;
+
+function animateLogo(bass){
+  // scale pulse on beat
+  const s = 1 + bass * 0.12;
+  glitchEl.style.transform = `scale(${s}, ${1 + bass * 0.06})`;
+
+  // dynamic text-shadow glow
+  glitchEl.style.textShadow = bass > 0.2
+    ? `0 0 ${10+bass*60}px rgba(255,255,255,${bass*.95}),`+
+      `0 0 ${40+bass*90}px rgba(0,255,255,${bass*.7}),`+
+      `0 0 ${70+bass*120}px rgba(255,0,255,${bass*.4})`
+    : '';
+
+  // JS-driven clip-path glitch slam on bass transient
+  const transient = bass - prevSmoothBass;
+  if(bass > 0.3 && transient > 0.05){
+    // randomise the clip slices for a hard glitch
+    const r1 = Math.random()*100, r2 = r1 + 5+Math.random()*25;
+    const r3 = Math.random()*100, r4 = r3 + 5+Math.random()*20;
+    glitchEl.style.setProperty('--c1','#ff00ff');
+    // Slam the before/after pseudo-elements via CSS variables isn't possible,
+    // so we do it by toggling a class that overrides animation with a snap
+    glitchEl.classList.add('beat-hit');
+    glitchTimer = 3; // hold for 3 frames
+  }
+  if(glitchTimer > 0){
+    glitchTimer--;
+    if(glitchTimer===0) glitchEl.classList.remove('beat-hit');
+  }
+}
+
+// ── MAIN LOOP ─────────────────────────────────────────────────
 resize();
+
+// Update boxRect every ~10 frames (cheap)
+let frameCount = 0;
 function loop(){
-  const rawBass=getBassEnergy();
-  smoothBass=smoothBass*.72+rawBass*.28;
-  const bass=smoothBass;
+  const rawBass = getBassEnergy();
+  prevSmoothBass = smoothBass;
+  smoothBass = smoothBass * .72 + rawBass * .28;
+  const bass = smoothBass;
+
+  if(frameCount++ % 10 === 0) updateLogoBox();
+
   drawBlobs(bass);
   drawPlasma(bass);
   drawTunnel(bass);
   drawParticles(bass);
   drawLightning(bass);
+  drawSpectrumBorder(bass);
   animateLogo(bass);
+
+  prevSmoothBass = bass; // keep for transient detection next frame
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
