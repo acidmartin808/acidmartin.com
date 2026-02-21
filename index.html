@@ -217,30 +217,140 @@ function drawPlasma(bass){
 let tt=0;
 const SPOKE_N=12;
 
-// Each spoke has a "calm" straight state and an "electrified" bolt state
-// morphT: 0=straight line, 1=full lightning — lerps between them on beat
+// Global spin direction flips on beat — all spokes reverse together
+let globalRotDir=1;
+let dirFlipCooldown=0;
+
 const spokes=Array.from({length:SPOKE_N},(_,i)=>({
-  baseAngle:(i/SPOKE_N)*Math.PI*2,  // resting angle
-  angle:(i/SPOKE_N)*Math.PI*2,      // current drawn angle
+  baseAngle:(i/SPOKE_N)*Math.PI*2,
+  angle:(i/SPOKE_N)*Math.PI*2,
   hue:(i/SPOKE_N)*360,
-  morphT:0,          // 0=straight, 1=lightning
-  morphTarget:0,     // what morphT is lerping toward
-  boltPts:[],        // jagged offsets (fixed per activation, interpolated in)
-  life:1,            // overall opacity/presence (always visible as spoke)
-  boltDecay:.025+Math.random()*.02,
-  rotDir:Math.random()>.5?1:-1,
-  rotSpeed:.008+Math.random()*.006,
+  morphT:0,
+  morphTarget:0,
+  boltPts:[],
+  rotSpeed:.007+Math.random()*.005,
 }));
 let spokeCooldown=0;
 
 function makeBoltOffsets(steps){
-  // generate perpendicular jitter offsets for each point along the spoke
-  // these get multiplied by morphT so at morphT=0 the line is perfectly straight
   return Array.from({length:steps},(_,i)=>{
     const t=i/steps;
-    const mag=80*(1-t*.6); // more jitter near center, tapers to tip
+    // ZERO jitter at center (t=0), grows outward — spokes always meet at center
+    const mag=90*t*(1-t*.3);
     return (Math.random()-.5)*mag;
   });
+}
+
+function drawTunnel(bass){
+  tctx.clearRect(0,0,W,H);
+  const maxR=Math.sqrt(cx*cx+cy*cy)*1.2;
+  const transient=bass-prevSmoothBass;
+
+  // ── concentric rings ───────────────────────────────────────
+  for(let i=40;i>=0;i--){
+    const p=i/40,r=maxR*p,depth=1-p,hue=(tt*30+i*15)%360;
+    tctx.beginPath();tctx.arc(cx,cy,r,0,Math.PI*2);
+    tctx.strokeStyle=hsl(hue,80,10+depth*20,.10+depth*.14+bass*.16);
+    tctx.lineWidth=1+bass*2;tctx.stroke();
+  }
+
+  // ── flip global rotation direction on beat ─────────────────
+  dirFlipCooldown=Math.max(0,dirFlipCooldown-1);
+  const bigHit=transient>0.042&&bass>0.20;
+  const smallHit=transient>0.018&&bass>0.10&&spokeCooldown===0;
+
+  if(bigHit && dirFlipCooldown===0){
+    globalRotDir*=-1;
+    dirFlipCooldown=45; // ~1.5s minimum between flips
+  }
+
+  // ── trigger lightning morph on beat ───────────────────────
+  spokeCooldown=Math.max(0,spokeCooldown-1);
+
+  if(bigHit){
+    spokeCooldown=5;
+    spokes.forEach(s=>{
+      s.morphTarget=1;
+      s.boltPts=makeBoltOffsets(12);
+      s.hue=(s.hue+60+Math.random()*80)%360;
+    });
+  } else if(smallHit){
+    spokeCooldown=8;
+    const count=3+Math.floor(bass*5);
+    const shuffled=[...Array(SPOKE_N).keys()].sort(()=>Math.random()-.5).slice(0,count);
+    shuffled.forEach(i=>{
+      const s=spokes[i];
+      s.morphTarget=.5+bass*.5;
+      s.boltPts=makeBoltOffsets(12);
+      s.hue=(s.hue+30+Math.random()*50)%360;
+    });
+  }
+
+  // target decays fast — quick zap back to straight
+  if(!bigHit){
+    spokes.forEach(s=>{
+      s.morphTarget=Math.max(0,s.morphTarget-.055);
+    });
+  }
+
+  // ── draw each spoke ────────────────────────────────────────
+  const STEPS=12;
+  spokes.forEach((s)=>{
+    const lerpSpd=s.morphT<s.morphTarget?0.30:0.25;
+    s.morphT+=(s.morphTarget-s.morphT)*lerpSpd;
+
+    // all spokes share global direction, each has own speed
+    s.angle+=globalRotDir*s.rotSpeed*(1+bass*.8);
+
+    if(s.boltPts.length<STEPS) s.boltPts=makeBoltOffsets(STEPS);
+
+    const perpX=-Math.sin(s.angle);
+    const perpY= Math.cos(s.angle);
+    const pts=[];
+    for(let i=0;i<=STEPS;i++){
+      const t=i/STEPS;
+      const r=maxR*t;
+      const sx=cx+Math.cos(s.angle)*r;
+      const sy=cy+Math.sin(s.angle)*r;
+      // jitter is zero at i=0 (center) — guaranteed to meet at cx,cy
+      const jOff=(s.boltPts[Math.min(i,STEPS-1)]||0)*s.morphT;
+      pts.push({x:sx+perpX*jOff, y:sy+perpY*jOff});
+    }
+
+    const m=s.morphT;
+    const brightness=55+m*30;
+    const alpha=.22+m*.65+bass*.15;
+    const lw=1+m*2.5+bass*1.5;
+
+    if(m>0.05){
+      tctx.shadowBlur=8+m*28+bass*15;
+      tctx.shadowColor=hsl(s.hue,100,70);
+    }
+
+    const g=tctx.createLinearGradient(cx,cy,cx+Math.cos(s.angle)*maxR,cy+Math.sin(s.angle)*maxR);
+    g.addColorStop(0, hsl(s.hue,100,brightness,alpha));
+    g.addColorStop(.5,hsl((s.hue+40)%360,100,brightness+10,alpha*.8));
+    g.addColorStop(1, hsl((s.hue+80)%360,100,brightness,0));
+    tctx.strokeStyle=g;
+    tctx.lineWidth=lw;
+    tctx.beginPath();
+    pts.forEach((p,i)=>i===0?tctx.moveTo(p.x,p.y):tctx.lineTo(p.x,p.y));
+    tctx.stroke();
+
+    if(m>0.15){
+      tctx.shadowBlur=0;
+      tctx.strokeStyle=`rgba(255,255,255,${m*.5})`;
+      tctx.lineWidth=.6;
+      tctx.beginPath();
+      pts.forEach((p,i)=>i===0?tctx.moveTo(p.x,p.y):tctx.lineTo(p.x,p.y));
+      tctx.stroke();
+    }
+
+    tctx.shadowBlur=0;
+  });
+
+  tt+=.011;
+}
 }
 
 function drawTunnel(bass){
@@ -620,22 +730,27 @@ function animateLogo(bass){
     logoText.style.textShadow='';
   }
 
-  // ── HIHAT STROBE — very aggressive ───────────────────────────
-  if(smoothHihat>0.028){ // lower threshold = triggers more often
+  // ── HIHAT STROBE — 16th note matched ─────────────────────────
+  // Two smoothing speeds: fast for onset detection, slow for sustain
+  const hihatFast = hihat; // raw = instant response to each 16th
+  smoothHihat = smoothHihat*.40+hihat*.60; // faster tracking (was .48/.52)
+
+  if(smoothHihat>0.022){ // very low threshold — catches every 16th hat
+    // Toggle every frame = 60fps flicker, thinned by probability
     strobeState=!strobeState;
-    // higher prob = more flicker frames
-    if(strobeState&&Math.random()<smoothHihat*2.5){
+    // Probability scales steeply — strong hats = nearly every frame flickers
+    const flickerProb = Math.min(0.95, smoothHihat*3.5 + hihatFast*2.0);
+    if(strobeState && Math.random()<flickerProb){
       logoText.classList.add('strobe-on');
     } else {
       logoText.classList.remove('strobe-on');
     }
-    // regen glitch slices on almost every hihat tick
-    if(Math.random()<smoothHihat*1.2){
-      setGlitchCSS(smoothHihat*.9+glitchOffset*.6);
+    // Glitch slice regen on almost every hat tick
+    if(Math.random()<smoothHihat*1.5){
+      setGlitchCSS(smoothHihat*1.0+glitchOffset*.6);
     }
   } else {
-    // even without hihats, random micro-glitch at low intensity
-    if(Math.random()<0.015) setGlitchCSS(0.15+bass*.3);
+    if(Math.random()<0.012) setGlitchCSS(0.12+bass*.25); // idle micro glitch
     logoText.classList.remove('strobe-on');
     strobeState=false;
   }
